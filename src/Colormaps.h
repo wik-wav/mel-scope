@@ -3124,6 +3124,8 @@ static const unsigned char kMapTheme[kNumMaps] = { 1, 1, 1, 1, 1, 1, 1, 2, 0, 0,
 
 static const unsigned char kMapLine[kNumMaps][3] = { {  95, 181, 242 }, {  95, 242, 236 }, {  95, 242, 187 }, {  95, 242, 215 }, { 242,  95, 117 }, { 246,  16, 160 }, { 226,   8, 190 }, { 242,  99,  95 }, { 163,  18,  63 }, { 104,  48, 122 }, { 166,  26,  92 }, { 214,  84,  20 } };
 
+static const unsigned char kMapNote[kNumMaps][3] = { { 185, 241, 251 }, { 214, 238, 209 }, { 238, 232, 197 }, { 235, 232, 199 }, { 234, 234, 200 }, { 248, 227, 230 }, { 220, 234, 207 }, { 233, 233, 197 }, {   4,  73,  86 }, {  13,  72,  90 }, {   4,  73,  87 }, {  73,  64,  65 } };
+
 static const unsigned char (*const kMaps[kNumMaps])[3] = {
     kMapEmber, kMapInferno, kMapMagma, kMapPlasma, kMapViridis, kMapTurbo, kMapCividis, kMapIce, kMapPaper, kMapSand, kMapBloom, kMapInk };
 

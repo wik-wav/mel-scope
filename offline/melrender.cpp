@@ -111,6 +111,14 @@ bool writePpm(const char* path, const uint32_t* px, int w, int h)
     return true;
 }
 
+const char* arg(int argc, char** argv, const char* key)
+{
+    const size_t kl = std::strlen(key);
+    for (int i = 1; i < argc; ++i)
+        if (std::strncmp(argv[i], key, kl) == 0 && argv[i][kl] == '=') return argv[i] + kl + 1;
+    return nullptr;
+}
+
 float argf(int argc, char** argv, const char* key, float def)
 {
     const size_t kl = std::strlen(key);
@@ -193,6 +201,32 @@ int main(int argc, char** argv)
     vp.floorDb = lr.floorDb;
     vp.ceilDb = lr.ceilDb;
     vp.now = store.count > 0 ? store.timeAt(store.count - 1) : 0.0;
+
+    // Synthetic MIDI for visual checks of the note layer: notes=57,60,64 places those
+    // pitches as held bands spread across the visible window.
+    static mel::NoteTrace noteTrace;
+    static std::vector<mel::MidiNote> noteList;
+    if (const char* noteArg = arg(argc, argv, "notes")) {
+        int pitch = 0;
+        int slot = 0;
+        const char* p = noteArg;
+        while (*p) {
+            while (*p == ',' || *p == ' ') ++p;
+            if (!*p) break;
+            pitch = std::atoi(p);
+            while (*p && *p != ',' && *p != ' ') ++p;
+            const double w = (double)vp.span;
+            const double start = vp.now - w * (0.86 - 0.12 * slot);
+            const double len = w * 0.10;
+            noteTrace.noteOn(pitch, start);
+            noteTrace.noteOff(pitch, start + len);
+            ++slot;
+        }
+        noteTrace.snapshot(noteList);
+        vp.notes = noteList.empty() ? nullptr : noteList.data();
+        vp.noteCount = (int)noteList.size();
+        vp.noteLevel = argf(argc, argv, "notelvl", 0.55f);
+    }
 
     std::vector<uint32_t> img((size_t)outW * outH, 0xFF000000u);
     mel::renderSpectrogram(img.data(), outW, outH, (size_t)outW, store, analyzer.bank(), vp);

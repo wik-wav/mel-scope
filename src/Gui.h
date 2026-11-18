@@ -124,6 +124,7 @@ private:
     int buttonY_ = 0, buttonH_ = 0;
     int listBottom_ = 0;
     std::vector<Row> rows_;
+    std::vector<mel::MidiNote> notes_; // snapshot handed to the renderer
 
     int hoverRow_ = -1, dragPid_ = -1, hoverX_ = -1, hoverY_ = -1;
     bool dirty_ = true;

@@ -207,6 +207,50 @@ int main()
         report(grew, what);
     }
 
+    // ---- MIDI note trace: the layer drawn under the spectrum depends on this
+    {
+        mel::NoteTrace nt;
+        std::vector<mel::MidiNote> snap;
+        nt.noteOn(60, 1.0);
+        nt.noteOff(60, 1.5);
+        nt.noteOn(64, 1.2);            // still held
+        nt.snapshot(snap);
+        bool found60 = false, found64 = false, held64 = false, ended60 = false;
+        for (const auto& n : snap) {
+            if (n.pitch == 60) { found60 = true; ended60 = (!n.held && std::fabs(n.end - 1.5) < 1e-9); }
+            if (n.pitch == 64) { found64 = true; held64 = n.held; }
+        }
+        char what[256];
+        std::snprintf(what, sizeof what, "note trace keeps %d notes, held flag %d/%d",
+                      (int)snap.size(), (int)held64, (int)ended60);
+        report(snap.size() == 2 && found60 && found64, what);
+        report(ended60 && held64, "note-off ends the note, unreleased note stays held");
+
+        nt.noteOn(64, 2.0);           // retrigger without a note-off
+        nt.snapshot(snap);
+        int held64count = 0;
+        for (const auto& n : snap)
+            if (n.pitch == 64 && n.held) ++held64count;
+        report(held64count == 1, "retrigger closes the previous note");
+
+        nt.trim(1.6);
+        nt.snapshot(snap);
+        bool sawHeld = false, sawOld = false;
+        for (const auto& n : snap) {
+            if (n.held) sawHeld = true;
+            if (n.pitch == 60) sawOld = true;
+        }
+        report(!sawOld, "trim drops ended notes");
+        report(sawHeld, "trim keeps held notes");
+
+        mel::NoteTrace big;
+        for (int i = 0; i < mel::NoteTrace::kCapacity + 40; ++i) big.noteOn(30 + (i % 60), 1.0 + i);
+        big.snapshot(snap);
+        std::snprintf(what, sizeof what, "note trace holds %d of a %d cap", (int)snap.size(),
+                      mel::NoteTrace::kCapacity);
+        report((int)snap.size() <= mel::NoteTrace::kCapacity, what);
+    }
+
     std::printf("\n%s (%d failure%s)\n", g_fail == 0 ? "PASS" : "FAIL", g_fail, g_fail == 1 ? "" : "s");
     return g_fail == 0 ? 0 : 1;
 }

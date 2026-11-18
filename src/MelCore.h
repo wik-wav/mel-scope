@@ -41,6 +41,7 @@ enum ParamIndex {
     pFreeze,
     pUiScale, // appended last so existing parameter ids do not move
     pLineRange, // same rule: never insert, or saved values shift meaning
+    pNotes,     // strength of the MIDI note layer (0 = off)
     pCount
 };
 
@@ -251,6 +252,34 @@ private:
 };
 
 // ------------------------------------------------------------------ rendering
+// One played note, in the same clock the image uses. `held` marks a note that has not
+// been released yet, so it can be drawn to the right edge.
+struct MidiNote {
+    int pitch = 0;
+    double start = 0.0;
+    double end = 0.0;
+    bool held = false;
+};
+
+// Note history: audio-rate note on/off in, UI-rate snapshot out. Fixed capacity so a
+// long session cannot grow without bound; the oldest note is dropped first.
+class NoteTrace {
+public:
+    static constexpr int kCapacity = 512;
+    void noteOn(int pitch, double t);
+    void noteOff(int pitch, double t);
+    void clear();
+    int count() const;
+    // Copies the current notes in time order into out (held notes last).
+    void snapshot(std::vector<MidiNote>& out) const;
+    // Drops notes that ended before `before` so the ring does not hold ancient ones.
+    void trim(double before);
+
+private:
+    mutable std::mutex mu_;
+    std::vector<MidiNote> notes_; // ordered by start
+};
+
 struct ViewParams {
     int light = 1;   // 1 = light canvas (ramp reversed so quiet is pale)
     int mode = 1; // 0 = mel spectrum, 1 = harmonic traces (spectral peak tracing)
@@ -268,6 +297,10 @@ struct ViewParams {
     float span = 4.0f;  // seconds visible across the width
     double now = 0.0;   // time at the right edge
     float fmin = 30.0f, fmax = 16000.0f;
+    // played notes, blended into the image behind the spectrum; noteLevel 0 disables
+    const MidiNote* notes = nullptr;
+    int noteCount = 0;
+    float noteLevel = 0.55f;
 };
 
 // Resolves the "ceiling + dynamic range" controls into absolute dB bounds.
@@ -299,6 +332,9 @@ struct FrequencyRange {
 FrequencyRange zoomFrequencyRange(float fmin, float fmax, int axis, float pointerPos01, float factor,
                                  float limitLo, float limitHi);
 float yForFrequency(float hz, float height, const MelBank& bank, int axis, float fmin, float fmax);
+
+// Equal-tempered pitch to Hz (69 = A4 = 440 Hz).
+float midiNoteToHz(float note);
 
 // is this colormap offered in the given theme? (dark = true/false)
 bool mapFitsTheme(int cmap, bool darkTheme);

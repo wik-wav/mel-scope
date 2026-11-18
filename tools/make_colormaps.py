@@ -5,7 +5,9 @@ Inferno/Magma/Plasma/Viridis/Turbo come from matplotlib (exact).
 screenshot is dominated by one background colour and a magenta->orange ramp,
 so we sort its lit pixels by luminance and take the median RGB per bin.
 """
+import io
 import os
+import re
 import sys
 import numpy as np
 import matplotlib.cm as cm
@@ -21,8 +23,17 @@ REF = sys.argv[1] if len(sys.argv) > 1 else None
 
 def ember_stops():
     if not REF:
-        print('no reference image given: skipping Ember, keeping the existing stops')
-        return None
+        # Without the reference screenshot, reuse the table already in the header so the
+        # script still regenerates everything else reproducibly.
+        try:
+            src = io.open(OUT, encoding="utf-8").read()
+            body = re.search(r"kMapEmber\[256\]\[3\] = \{(.*?)\};", src, re.S).group(1)
+            rows = re.findall(r"\{\s*(\d+),\s*(\d+),\s*(\d+)\s*\}", body)
+            stops = [tuple(int(v) for v in row) for row in rows]
+            print(f"no reference image: reusing the {len(stops)} Ember stops from {os.path.basename(OUT)}")
+            return stops
+        except Exception as exc:
+            raise SystemExit(f"Ember needs the reference image (pass its path as an argument): {exc}")
     a = np.asarray(Image.open(REF).convert("RGB")).astype(np.float32)
     flat = a.reshape(-1, 3).astype(np.uint8)
     cols, counts = np.unique(flat, axis=0, return_counts=True)
@@ -144,6 +155,89 @@ def main():
         r2, g2, b2 = colorsys.hls_to_rgb(h2, l2, s2)
         return (int(round(r2 * 255)), int(round(g2 * 255)), int(round(b2 * 255)))
 
+
+    # ------------------------------------------------------------------ note tint
+    # MIDI notes are composited *under* the spectrum, at a low alpha that falls off
+    # where the image is bright. Picking a colour by distance from the ramp alone is
+    # not enough: at that alpha a tint can vanish into the wash it lands on, or read
+    # as one of the peak traces. So the search runs on the *composited* colour, over
+    # the backgrounds a note realistically sits on, and demands separation from both
+    # the background and the peak ink.
+    def _lab(rgb):
+        def f(u):
+            u /= 255.0
+            return u / 12.92 if u <= 0.04045 else ((u + 0.055) / 1.055) ** 2.4
+        r, g, b = (f(c) for c in rgb)
+        x = (r * 0.4124 + g * 0.3576 + b * 0.1805) / 0.95047
+        y = r * 0.2126 + g * 0.7152 + b * 0.0722
+        z = (r * 0.0193 + g * 0.1192 + b * 0.9505) / 1.08883
+        g_ = lambda t: t ** (1 / 3) if t > 0.008856 else 7.787 * t + 16 / 116
+        fx, fy, fz = g_(x), g_(y), g_(z)
+        return (116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz))
+
+    def _de(a, b):
+        la, lb = _lab(a), _lab(b)
+        return sum((la[i] - lb[i]) ** 2 for i in range(3)) ** 0.5
+
+    def _mix(bg, fg, a):
+        return tuple(int(round(bg[i] + (fg[i] - bg[i]) * a)) for i in range(3))
+
+    def note_tint(tab, ink, light_bg, name=""):
+        # The renderer bands a note at alpha 0.42 * level (0.55 by default), so the
+        # weakest note is drawn at about 0.23 and fades further where the image is
+        # bright. Judge the choice at that alpha, over the backgrounds a note actually
+        # lands on: the canvas and the quiet half of the ramp.
+        A = 0.42 * 0.55
+        bgs = [tab[0], tab[int(0.10 * 255)], tab[int(0.22 * 255)], tab[int(0.36 * 255)]]
+        if light_bg:
+            bgs.append((255, 255, 255))
+        bg_lab = [_lab(c) for c in bgs]
+
+        def chroma(c):
+            l = _lab(c)
+            return (l[1] ** 2 + l[2] ** 2) ** 0.5
+
+        best, best_score = None, -1.0
+        # coarse sweep, then refine around the winner: cheap and stable
+        steps = [(8, 8, 8), (3, 3, 3), (1, 1, 1)]
+        centre = None
+        for step in steps:
+            if centre is None:
+                lo, hi = (0, 0, 0), (255, 255, 255)
+            else:
+                lo = tuple(max(0, centre[i] - 3 * step[i]) for i in range(3))
+                hi = tuple(min(255, centre[i] + 3 * step[i]) for i in range(3))
+            for r in range(lo[0], hi[0] + 1, step[0]):
+                for g in range(lo[1], hi[1] + 1, step[1]):
+                    for b in range(lo[2], hi[2] + 1, step[2]):
+                        c = (r, g, b)
+                        L = _lab(c)[0]
+                        C = chroma(c)
+                        # calm, not a highlighter: a modest tint with a mid value that
+                        # sits behind the image instead of shouting over it
+                        if C > 20.0:
+                            continue
+                        if light_bg and not (28.0 <= L <= 58.0):
+                            continue
+                        if (not light_bg) and not (66.0 <= L <= 92.0):
+                            continue
+                        vis = 1e9
+                        for bg, lb in zip(bgs, bg_lab):
+                            comp = _lab(_mix(bg, c, A))
+                            d = sum((comp[i] - lb[i]) ** 2 for i in range(3)) ** 0.5
+                            if d < vis:
+                                vis = d
+                        apart = _de(c, ink)          # must not read as a peak trace
+                        # a mild pull towards neutral: colour should help, not decorate
+                        calm = 1.0 - 0.10 * (C / 20.0)
+                        score = min(vis, 0.55 * apart) * calm
+                        if score > best_score:
+                            best_score, best = score, c
+            centre = best
+        return best
+
+    NOTE_TINT = {}
+
     lines = ["// Generated by _analysis/make_colormaps.py -- do not edit by hand.",
              "#pragma once",
              "#include <cstdint>",
@@ -175,6 +269,9 @@ def main():
     lines.append("")
     line_rows = ", ".join("{ %3d, %3d, %3d }" % line_colour(t, n not in ("Ember", "Inferno", "Magma", "Plasma", "Viridis", "Turbo", "Cividis", "Ice"), n) for n, t in maps)
     lines.append(f"static const unsigned char kMapLine[kNumMaps][3] = {{ {line_rows} }};")
+    lines.append("")
+    note_rows = ", ".join("{ %3d, %3d, %3d }" % note_tint(t, line_colour(t, n not in ("Ember", "Inferno", "Magma", "Plasma", "Viridis", "Turbo", "Cividis", "Ice"), n), n not in ("Ember", "Inferno", "Magma", "Plasma", "Viridis", "Turbo", "Cividis", "Ice"), n) for n, t in maps)
+    lines.append(f"static const unsigned char kMapNote[kNumMaps][3] = {{ {note_rows} }};")
     lines.append("")
     lines.append("static const unsigned char (*const kMaps[kNumMaps])[3] = {")
     lines.append("    " + ", ".join(f"kMap{n}" for n, _ in maps) + " };")

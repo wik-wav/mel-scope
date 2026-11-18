@@ -14,6 +14,7 @@
 
 #include "pluginterfaces/base/futils.h"
 #include "pluginterfaces/base/ibstream.h"
+#include "pluginterfaces/vst/ivstevents.h"
 #include "pluginterfaces/base/ustring.h"
 #include "pluginterfaces/gui/iplugview.h"
 #include "pluginterfaces/vst/vstspeaker.h"
@@ -347,6 +348,7 @@ public:
 
 private:
     melscope::App app_;
+    double sampleRate_ = 48000.0;
     std::vector<AppParameter*> params_;
     bool prepared_ = false;
 };
@@ -392,6 +394,7 @@ tresult PLUGIN_API MelScopeVST3::terminate() { return SingleComponentEffect::ter
 tresult PLUGIN_API MelScopeVST3::setupProcessing(ProcessSetup& setup)
 {
     if (setup.symbolicSampleSize != kSample32) return kResultFalse;
+    sampleRate_ = setup.sampleRate;
     app_.setSampleRate(setup.sampleRate);
     prepared_ = true;
     return kResultOk;
@@ -416,6 +419,25 @@ tresult PLUGIN_API MelScopeVST3::process(ProcessData& data)
 {
     const int32 frames = data.numSamples;
     if (frames <= 0) return kResultOk;
+
+    // MIDI: notes feed the trace drawn under the spectrum. Events are echoed to the
+    // output list too, so downstream instruments still see what was played.
+    if (data.inputEvents) {
+        const int32 n = data.inputEvents->getEventCount();
+        for (int32 i = 0; i < n; ++i) {
+            Event e{};
+            if (data.inputEvents->getEvent(i, e) != kResultOk) continue;
+            const double t = app_.engine.latestTime()
+                             + (sampleRate_ > 0.0 ? (double)e.sampleOffset / sampleRate_ : 0.0);
+            if (e.type == Event::kNoteOnEvent) {
+                if (e.noteOn.velocity > 0.0f) app_.notes.noteOn(e.noteOn.pitch, t);
+                else app_.notes.noteOff(e.noteOn.pitch, t);
+            } else if (e.type == Event::kNoteOffEvent) {
+                app_.notes.noteOff(e.noteOff.pitch, t);
+            }
+            if (data.outputEvents) data.outputEvents->addEvent(e);
+        }
+    }
 
     // pass-through first: the analyser must never alter what the host hears
     for (int32 b = 0; b < data.numOutputs; ++b) {

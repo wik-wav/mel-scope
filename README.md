@@ -46,6 +46,11 @@ With the pointer over the piano keys, a plain wheel zooms frequency too.
 **Freeze** holds the current image while you keep working on it; the parameters that
 would rebuild the analyser are greyed out until you unfreeze.
 
+Played **MIDI notes** are drawn behind the spectrum as bands one semitone tall at their
+own pitch, so the note you played lines up with what the analyser shows; the stronger
+the spectrum there, the more the band fades behind it. **MIDI notes** in the panel sets
+their strength, 0 turns them off. MIDI passes through untouched, like the audio.
+
 Every control is also a host parameter, so it can be automated and is saved with the
 project. **Save preset** / **Load preset** write and read the whole setup as a file, and
 the last used settings are restored automatically

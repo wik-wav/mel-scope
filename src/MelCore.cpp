@@ -78,6 +78,11 @@ std::vector<ParamDef> makeParamDefs()
           "Size of the interface text and controls, in percent of the host's scale. The window "
           "opens at this size too",
           75, 200, 115, true, false, " %", {} });
+    add({ "notes", "MIDI notes", "View",
+          "How strongly notes received on the MIDI input are drawn behind the spectrum, 0 = "
+          "off. Each note is a band one semitone tall at its own pitch, so it lines up with "
+          "what the analyser shows",
+          0.0f, 100.0f, 55.0f, true, false, " %", {} });
     add({ "line", "Peak range", "Range",
           "How many dB of level the peak traces span, counted down from the ceiling. Set apart "
           "from Spectrum range: keep that wide to see the spectrum and this narrower so quiet "
@@ -114,6 +119,7 @@ bool paramTableIsConsistent()
         { "gamma", pGamma },       { "tilt", pTilt },       { "glow", pGlow },
         { "grain", pGrain },       { "smooth", pSmooth },   { "keys", pKeyLines },
         { "freeze", pFreeze },     { "ui", pUiScale },      { "line", pLineRange },
+        { "notes", pNotes },
     };
     static_assert(sizeof(kExpect) / sizeof(kExpect[0]) == (size_t)pCount,
                   "the expected-key table must list every parameter");
@@ -871,6 +877,9 @@ static void blurPass(uint32_t* src, uint32_t* tmp, int w, int h, int radius)
     }
 }
 
+void blendMidiNotes(uint32_t* flat, int width, int height, size_t stride, uint32_t canvas,
+                    const MelBank& bank, const ViewParams& vp);
+
 static void renderSpectrum(uint32_t* dst, int width, int height, size_t stride,
                        const FrameStore& frames, const MelBank& bank, const ViewParams& vp)
 {
@@ -976,6 +985,9 @@ static void renderSpectrum(uint32_t* dst, int width, int height, size_t stride,
                 std::memcpy(dst + (size_t)y * stride, &flat[(size_t)y * width], sizeof(uint32_t) * (size_t)width);
         }
     }
+
+    // played notes sit under the spectrum in this display too
+    blendMidiNotes(dst, width, height, stride, bg, bank, vp);
 }
 
 void addGrain(uint32_t* dst, int width, int height, size_t stride, float amount)
@@ -1265,6 +1277,9 @@ const float kInkGamma = 1.35f;   // <1 flattens, >1 separates the quiet partials
         }
     }
 
+    // ---- played notes, under the traces
+    blendMidiNotes(flat.data(), width, height, (size_t)width, bg, bank, vp);
+
     // ---- composite the peaks in the complementary ink
     const uint32_t inkR = lineInk[0], inkG = lineInk[1], inkB = lineInk[2];
     for (size_t i = 0; i < npix; ++i) {
@@ -1339,4 +1354,134 @@ FrequencyRange zoomFrequencyRange(float fmin, float fmax, int axis, float pointe
     return out;
 }
 
+// ---------------------------------------------------------------- MIDI notes
+void NoteTrace::noteOn(int pitch, double t)
+{
+    std::lock_guard<std::mutex> lk(mu_);
+    // a repeated note-on for the same pitch ends the previous one (some hosts retrigger
+    // without sending note-off first)
+    for (auto& n : notes_)
+        if (n.pitch == pitch && n.held) {
+            n.held = false;
+            n.end = t;
+        }
+    if ((int)notes_.size() >= kCapacity) notes_.erase(notes_.begin());
+    MidiNote n;
+    n.pitch = pitch;
+    n.start = t;
+    n.end = t;
+    n.held = true;
+    notes_.push_back(n);
+}
+
+void NoteTrace::noteOff(int pitch, double t)
+{
+    std::lock_guard<std::mutex> lk(mu_);
+    for (auto it = notes_.rbegin(); it != notes_.rend(); ++it)
+        if (it->pitch == pitch && it->held) {
+            it->held = false;
+            it->end = std::max(it->start, t);
+            return;
+        }
+}
+
+void NoteTrace::clear()
+{
+    std::lock_guard<std::mutex> lk(mu_);
+    notes_.clear();
+}
+
+int NoteTrace::count() const
+{
+    std::lock_guard<std::mutex> lk(mu_);
+    return (int)notes_.size();
+}
+
+void NoteTrace::snapshot(std::vector<MidiNote>& out) const
+{
+    std::lock_guard<std::mutex> lk(mu_);
+    out = notes_;
+}
+
+void NoteTrace::trim(double before)
+{
+    std::lock_guard<std::mutex> lk(mu_);
+    notes_.erase(std::remove_if(notes_.begin(), notes_.end(),
+                                [before](const MidiNote& n) { return !n.held && n.end < before; }),
+                 notes_.end());
+}
+
+float midiNoteToHz(float note) { return 440.0f * std::pow(2.0f, (note - 69.0f) / 12.0f); }
+
+// Notes are drawn *behind* the image: a flat band per note at its pitch, mixed in after
+// the wash (and after the glow, so it stays crisp) and before the peak traces. The mix
+// is strongest where the spectrum is dark, so the notes read in the gaps but never
+// compete with the material itself.
+void blendMidiNotes(uint32_t* flat, int width, int height, size_t stride, uint32_t canvas,
+                    const MelBank& bank, const ViewParams& vp)
+{
+    const int cr0 = (int)((canvas >> 16) & 0xFF), cg0 = (int)((canvas >> 8) & 0xFF),
+              cb0 = (int)(canvas & 0xFF);
+    if (!vp.notes || vp.noteCount <= 0 || vp.noteLevel <= 0.001f) return;
+    if (width < 8 || height < 8) return;
+
+    const float span = std::max(0.05f, vp.span);
+    const double t0 = vp.now - (double)span;
+    const float level = clampf(vp.noteLevel, 0.0f, 1.0f);
+    const int noteR = vp.light ? 0x3c : 0xe4;
+    const int noteG = vp.light ? 0x42 : 0xe2;
+    const int noteB = vp.light ? 0x58 : 0xf0;
+
+    for (int i = 0; i < vp.noteCount; ++i) {
+        const MidiNote& n = vp.notes[i];
+        const double end = n.held ? vp.now : n.end;
+        if (end < t0 || n.start > vp.now) continue;
+
+        const float xa = (float)((std::max(n.start, t0) - t0) / (double)span) * (float)(width - 1);
+        const float xb = (float)((std::min(end, vp.now) - t0) / (double)span) * (float)(width - 1);
+        int x0 = (int)std::floor(xa);
+        int x1 = (int)std::ceil(xb);
+        if (x1 < x0) x1 = x0;
+        x0 = std::max(0, x0);
+        x1 = std::min(width - 1, x1);
+        if (x1 < x0) continue;
+
+        // the note's own semitone band, through the same mapping as the image
+        const float hzLo = midiNoteToHz((float)n.pitch - 0.5f);
+        const float hzHi = midiNoteToHz((float)n.pitch + 0.5f);
+        const float yA = yForFrequency(hzLo, (float)height, bank, vp.axis, vp.fmin, vp.fmax);
+        const float yB = yForFrequency(hzHi, (float)height, bank, vp.axis, vp.fmin, vp.fmax);
+        int yTop = (int)std::floor(std::min(yA, yB));
+        int yBot = (int)std::ceil(std::max(yA, yB));
+        yTop = std::max(0, yTop);
+        yBot = std::min(height - 1, yBot);
+        if (yBot < yTop) continue;
+
+        // centre line, so the exact pitch is readable even when the band is several px
+        const float yC = yForFrequency(midiNoteToHz((float)n.pitch), (float)height, bank, vp.axis,
+                                       vp.fmin, vp.fmax);
+        const int yLine = (int)std::lround(yC);
+
+        for (int y = yTop; y <= yBot; ++y) {
+            uint32_t* row = flat + (size_t)y * stride;
+            const bool isLine = (y == yLine) && (yBot > yTop);
+            for (int x = x0; x <= x1; ++x) {
+                const uint32_t c = row[x];
+                const int r0 = (int)((c >> 16) & 0xFF), g0 = (int)((c >> 8) & 0xFF), b0 = (int)(c & 0xFF);
+                // how much room the image leaves here, measured as distance from the
+                // canvas colour: quiet is "same as the canvas", on either theme
+                const int dr = r0 - cr0, dg = g0 - cg0, db = b0 - cb0;
+                const float dist = std::sqrt((float)(dr * dr + dg * dg + db * db)) / 441.0f;
+                float a = level * (isLine ? 0.92f : 0.55f) * (1.0f - 0.92f * std::min(1.0f, dist));
+                if (a <= 0.002f) continue;
+                const int r = r0 + (int)(((float)noteR - (float)r0) * a);
+                const int g = g0 + (int)(((float)noteG - (float)g0) * a);
+                const int b = b0 + (int)(((float)noteB - (float)b0) * a);
+                row[x] = 0xFF000000u | ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
+            }
+        }
+    }
+}
+
 } // namespace mel
+

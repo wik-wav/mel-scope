@@ -386,6 +386,18 @@ void readEventList(Plugin* pl, const clap_input_events_t* in)
         const clap_event_header_t* ev = in->get(in, i);
         if (!ev) continue;
         if (ev->space_id != CLAP_CORE_EVENT_SPACE_ID) continue;
+        if (ev->type == CLAP_EVENT_NOTE_ON || ev->type == CLAP_EVENT_NOTE_OFF) {
+            const auto* n = reinterpret_cast<const clap_event_note_t*>(ev);
+            const double t = pl->app.engine.latestTime()
+                             + (pl->app.sampleRate() > 0
+                                    ? (double)ev->time / pl->app.sampleRate()
+                                    : 0.0);
+            if (ev->type == CLAP_EVENT_NOTE_ON)
+                pl->app.notes.noteOn((int)n->key, t);
+            else
+                pl->app.notes.noteOff((int)n->key, t);
+            continue;
+        }
         if (ev->type == CLAP_EVENT_PARAM_VALUE) {
             const auto* pv = reinterpret_cast<const clap_event_param_value_t*>(ev);
             applyParamEvent(pl, pv->param_id, pv->value);
@@ -847,11 +859,35 @@ clap_process_status pluginProcess(const clap_plugin_t* p, const clap_process_t* 
     return CLAP_PROCESS_CONTINUE;
 }
 
+
+// ---------------------------------------------------------------- note ports
+// One MIDI input port: the plugin listens to what is played and never blocks it, since
+// CLAP delivers events to every plugin on the track.
+uint32_t notePortsCount(const clap_plugin_t* p, bool is_input)
+{
+    (void)p;
+    return is_input ? 1u : 0u;
+}
+
+bool notePortsGet(const clap_plugin_t* p, uint32_t index, bool is_input, clap_note_port_info_t* info)
+{
+    (void)p;
+    if (!is_input || index != 0 || !info) return false;
+    info->id = 0;
+    info->supported_dialects = CLAP_NOTE_DIALECT_CLAP;
+    info->preferred_dialect = CLAP_NOTE_DIALECT_CLAP;
+    std::snprintf(info->name, sizeof(info->name), "%s", "Notes");
+    return true;
+}
+
+const clap_plugin_note_ports_t kNotePorts = { notePortsCount, notePortsGet };
+
 const void* pluginGetExtension(const clap_plugin_t* p, const char* id)
 {
     (void)p;
     if (!id) return nullptr;
     if (std::strcmp(id, CLAP_EXT_PARAMS) == 0) return &kParams;
+    if (std::strcmp(id, CLAP_EXT_NOTE_PORTS) == 0) return &kNotePorts;
     if (std::strcmp(id, CLAP_EXT_AUDIO_PORTS) == 0) return &kAudioPorts;
     if (std::strcmp(id, CLAP_EXT_GUI) == 0) return &kGui;
     if (std::strcmp(id, CLAP_EXT_STATE) == 0) return &kState;
