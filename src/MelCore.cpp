@@ -1150,6 +1150,17 @@ const float kBgCeil = 0.42f;
     }
 
     // ---- traced peaks, kept as coverage so they can be composited last
+    // A trace that ends used to stop dead at full ink, which reads as a cut - most
+    // visibly in the high range, where the peak tracer loses a partial quickly. Each
+    // end now gets a short decaying tail, so the line dies away instead of clipping.
+    constexpr int kTailPx = 11;
+    constexpr float kTailTau = 3.0f;
+    constexpr float kContinuityLog2 = 0.06f; // ~4 % in frequency counts as the same trace
+    auto frameAtColumn = [&](int cx) {
+        if (cx < 0 || cx >= width || !xValid[(size_t)cx]) return -1;
+        return (xFrac[(size_t)cx] < 0.5f) ? xI0[(size_t)cx] : xI1[(size_t)cx];
+    };
+
     for (int x = 0; x < width; ++x) {
         if (!xValid[(size_t)x]) continue;
         const int fi = (xFrac[(size_t)x] < 0.5f) ? xI0[(size_t)x] : xI1[(size_t)x];
@@ -1178,6 +1189,40 @@ const float kBgCeil = 0.42f;
                 unsigned char& cell = cover[(size_t)y * (size_t)width + (size_t)x];
                 const unsigned char iv = (unsigned char)(v * 255.0f);
                 if (iv > cell) cell = iv;
+            }
+
+            // does this partial survive into the neighbouring column?
+            const int fn = frameAtColumn(x + 1);
+            bool continues = true;
+            if (fn >= 0 && fn != fi) {
+                continues = false;
+                const int npn = frames.peakCountAt(fn);
+                const Peak* pn = frames.peaksAt(fn);
+                for (int j = 0; j < npn; ++j) {
+                    if (pn[j].hz <= 0.0f) continue;
+                    if (std::fabs(std::log2(pn[j].hz / pk[i].hz)) < kContinuityLog2) {
+                        continues = true;
+                        break;
+                    }
+                }
+            }
+            if (!continues) {
+                for (int dx = 1; dx <= kTailPx; ++dx) {
+                    const int xx = x + dx;
+                    if (xx >= width) break;
+                    const float f = std::exp(-(float)dx / kTailTau);
+                    for (int d = -span; d <= span; ++d) {
+                        const int y = yc + d;
+                        if (y < 0 || y >= height) continue;
+                        const int ad = std::abs(d);
+                        const float w = ad == 0 ? 1.0f : (ad <= step ? kCore : kSkirt);
+                        float v = n * w * f;
+                        if (v > 1.0f) v = 1.0f;
+                        unsigned char& cell = cover[(size_t)y * (size_t)width + (size_t)xx];
+                        const unsigned char iv = (unsigned char)(v * 255.0f);
+                        if (iv > cell) cell = iv;
+                    }
+                }
             }
         }
     }
