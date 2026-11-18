@@ -77,6 +77,27 @@ void App::setPluginPath(const char* path)
     g_pluginDir = (slash == std::string::npos) ? std::string(".") : p.substr(0, slash);
 }
 
+// ---------------------------------------------------------------- window state
+void App::setEditorSize(int w, int h)
+{
+    if (w <= 0 || h <= 0) return;
+    const int oldW = editorW_.exchange(w);
+    const int oldH = editorH_.exchange(h);
+    if (oldW != w || oldH != h) settingsDirty_.store(true, std::memory_order_relaxed);
+}
+
+void App::setViewRange(float lo, float hi)
+{
+    if (!(hi > lo)) {
+        viewLo_.store(0.0f, std::memory_order_relaxed);
+        viewHi_.store(0.0f, std::memory_order_relaxed);
+    } else {
+        viewLo_.store(lo, std::memory_order_relaxed);
+        viewHi_.store(hi, std::memory_order_relaxed);
+    }
+    settingsDirty_.store(true, std::memory_order_relaxed);
+}
+
 bool App::writeParams(const char* path) const
 {
     if (!path || !*path) return false;
@@ -87,6 +108,11 @@ bool App::writeParams(const char* path) const
     std::fprintf(f, "# version=2\n");
     for (int i = 0; i < (int)defs.size(); ++i)
         std::fprintf(f, "%s=%.6f\n", defs[(size_t)i].key, (double)values_[i].load(std::memory_order_relaxed));
+    // window state: not parameters, so they are written explicitly
+    std::fprintf(f, "editorw=%d\n", editorWidth());
+    std::fprintf(f, "editorh=%d\n", editorHeight());
+    std::fprintf(f, "viewlow=%.3f\n", (double)viewLow());
+    std::fprintf(f, "viewhigh=%.3f\n", (double)viewHigh());
     std::fclose(f);
     return true;
 }
@@ -112,6 +138,10 @@ bool App::readParams(const char* path)
         char* eq = std::strchr(line, '=');
         if (!eq) continue;
         *eq = 0;
+        if (std::strcmp(line, "editorw") == 0) { editorW_.store(std::max(0, std::atoi(eq + 1))); continue; }
+        if (std::strcmp(line, "editorh") == 0) { editorH_.store(std::max(0, std::atoi(eq + 1))); continue; }
+        if (std::strcmp(line, "viewlow") == 0) { viewLo_.store((float)std::atof(eq + 1)); continue; }
+        if (std::strcmp(line, "viewhigh") == 0) { viewHi_.store((float)std::atof(eq + 1)); continue; }
         const int pid = mel::paramIndexForKey(line);
         if (pid < 0) continue;
         if (pid == mel::pCmap) sawCmap = true;
@@ -571,7 +601,12 @@ bool guiGetSize(const clap_plugin_t* p, uint32_t* width, uint32_t* height)
     // one. The UI scale makes those two differ.
     if (!pl->guiCreated) {
         uint32_t pw = 1180, ph = 700;
-        preferredSize(pl, &pw, &ph);
+        if (pl->app.editorWidth() > 0 && pl->app.editorHeight() > 0) {
+            pw = (uint32_t)pl->app.editorWidth();
+            ph = (uint32_t)pl->app.editorHeight();
+        } else {
+            preferredSize(pl, &pw, &ph);
+        }
         *width = pw;
         *height = ph;
         return true;
@@ -622,6 +657,7 @@ bool guiSetSize(const clap_plugin_t* p, uint32_t width, uint32_t height)
     if (!pl->gui) return false;
     pl->wantW = width;
     pl->wantH = height;
+    pl->app.setEditorSize((int)width, (int)height);
     pl->gui->setSize((int)width, (int)height);
     return true;
 }
@@ -693,6 +729,15 @@ bool stateSave(const clap_plugin_t* p, const clap_ostream_t* stream)
         push(&i, 4);
         push(&v, 4);
     }
+    // window state travels with the project: a blob without this tail simply keeps the
+    // settings-file values
+    const uint32_t tailMagic = 0x54535758u; // 'WSXT'
+    const uint32_t tailCount = 4;
+    const float tail[4] = { (float)pl->app.editorWidth(), (float)pl->app.editorHeight(),
+                            pl->app.viewLow(), pl->app.viewHigh() };
+    push(&tailMagic, 4);
+    push(&tailCount, 4);
+    push(tail, sizeof tail);
     const int64_t written = stream->write(stream, buf.data(), (uint64_t)buf.size());
     return written == (int64_t)buf.size();
 }
@@ -733,6 +778,20 @@ bool stateLoad(const clap_plugin_t* p, const clap_istream_t* stream)
             v = (float)mapped;
         }
         if (id < (uint32_t)mel::pCount) pl->app.set((int)id, v);
+    }
+    // optional window-state tail
+    unsigned char tailHead[8];
+    if (stream->read(stream, tailHead, sizeof(tailHead)) == (int64_t)sizeof(tailHead)) {
+        uint32_t magic = 0, n = 0;
+        std::memcpy(&magic, tailHead, 4);
+        std::memcpy(&n, tailHead + 4, 4);
+        if (magic == 0x54535758u && n == 4) {
+            float tail[4] = {};
+            if (stream->read(stream, tail, sizeof(tail)) == (int64_t)sizeof(tail)) {
+                pl->app.setEditorSize((int)(tail[0] + 0.5f), (int)(tail[1] + 0.5f));
+                pl->app.setViewRange(tail[2], tail[3]);
+            }
+        }
     }
     pl->app.applyIfNeeded();
     return true;

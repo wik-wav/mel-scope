@@ -357,6 +357,10 @@ bool Gui::create(HWND parent, int width, int height)
         registered = true;
     }
 
+    if (app_.editorWidth() > 0 && app_.editorHeight() > 0) {
+        wantW_ = app_.editorWidth();
+        wantH_ = app_.editorHeight();
+    }
     RECT pr;
     GetClientRect(parent, &pr);
     (void)pr;
@@ -830,6 +834,14 @@ void Gui::paint()
                 viewFmin_ = bank.fmin;
                 viewFmax_ = bank.fmax;
             }
+            // a zoom stored with the project wins over the plain band, as long as it
+            // still lies inside what is analysed
+            if (!keepView_ && app_.haveViewRange() && app_.viewLow() >= bank.fmin * 0.999f
+                && app_.viewHigh() <= bank.fmax * 1.001f && app_.viewHigh() > app_.viewLow()) {
+                viewFmin_ = app_.viewLow();
+                viewFmax_ = app_.viewHigh();
+            }
+            app_.setViewRange(viewFmin_, viewFmax_);
             keepView_ = false;
             viewReady_ = true;
             reqFmin_ = bank.fmin;
@@ -1369,7 +1381,8 @@ LRESULT Gui::handle(UINT msg, WPARAM wp, LPARAM lp)
     case WM_SIZE:
         if (LOWORD(lp) > 0 && HIWORD(lp) > 0) {
             width_ = LOWORD(lp);
-            height_ = LOWORD(lp);
+            height_ = HIWORD(lp); // was LOWORD: the height followed the width
+            app_.setEditorSize(width_, height_); // remembered for the next time the window opens
             wantW_ = width_;
             wantH_ = height_;
             ensureBuffer();
@@ -1971,6 +1984,7 @@ void Gui::clampView()
     if (!(hi > lo)) return;
     viewFmin_ = mel::clampf(viewFmin_, lo, hi);
     viewFmax_ = mel::clampf(viewFmax_, lo, hi);
+    app_.setViewRange(viewFmin_, viewFmax_);
     if (viewFmax_ - viewFmin_ < (hi - lo) * 0.002f) {
         viewFmin_ = lo;
         viewFmax_ = hi;

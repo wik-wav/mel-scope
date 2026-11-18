@@ -56,6 +56,12 @@ void writeState(melscope::App& app, IBStream* out)
         out->write(&i, 4, &written);
         out->write(&v, 4, &written);
     }
+    const uint32_t tailMagic = 0x54535758u, tailCount = 4;
+    const float tail[4] = { (float)app.editorWidth(), (float)app.editorHeight(), app.viewLow(),
+                            app.viewHigh() };
+    out->write(const_cast<uint32_t*>(&tailMagic), 4, &written);
+    out->write(const_cast<uint32_t*>(&tailCount), 4, &written);
+    out->write(const_cast<float*>(tail), sizeof tail, &written);
 }
 
 void readState(melscope::App& app, IBStream* in)
@@ -75,6 +81,19 @@ void readState(melscope::App& app, IBStream* in)
         if (in->read(&id, 4, &got) != kResultOk || got != 4) return;
         if (in->read(&v, 4, &got) != kResultOk || got != 4) return;
         if (id < (uint32_t)mel::pCount) app.set((int)id, v, false);
+    }
+    unsigned char tailHead[8];
+    if (in->read(tailHead, 8, &got) == kResultOk && got == 8) {
+        uint32_t magic = 0, n = 0;
+        std::memcpy(&magic, tailHead, 4);
+        std::memcpy(&n, tailHead + 4, 4);
+        if (magic == 0x54535758u && n == 4) {
+            float tail[4] = {};
+            if (in->read(tail, sizeof tail, &got) == kResultOk && got == (int32)sizeof(tail)) {
+                app.setEditorSize((int)(tail[0] + 0.5f), (int)(tail[1] + 0.5f));
+                app.setViewRange(tail[2], tail[3]);
+            }
+        }
     }
     app.applyIfNeeded();
 }
@@ -217,8 +236,10 @@ public:
         if (!parent || !type || std::strcmp(type, kPlatformTypeHWND) != 0) return kResultFalse;
         parent_ = (HWND)parent;
         if (!gui_) gui_ = std::make_unique<melscope::Gui>(app_);
-        const int w = (int)std::lround(1180.0 * scale());
-        const int h = (int)std::lround(700.0 * scale());
+        const int w = app_.editorWidth() > 0 ? app_.editorWidth()
+                                             : (int)std::lround(1180.0 * scale());
+        const int h = app_.editorHeight() > 0 ? app_.editorHeight()
+                                              : (int)std::lround(700.0 * scale());
         if (!gui_->create(parent_, w, h)) {
             gui_.reset();
             return kResultFalse;
@@ -246,6 +267,7 @@ public:
     {
         if (!newSize) return kInvalidArgument;
         size_ = *newSize;
+        app_.setEditorSize(size_.right - size_.left, size_.bottom - size_.top);
         if (gui_ && gui_->hwnd()) {
             SetWindowPos(gui_->hwnd(), nullptr, 0, 0, size_.right - size_.left,
                          size_.bottom - size_.top, SWP_NOZORDER | SWP_NOACTIVATE);

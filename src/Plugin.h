@@ -49,6 +49,18 @@ public:
     mel::LevelRange levels() const;
     mel::ViewParams viewParams() const;
 
+    // Window state that is not a parameter but must survive: the size the user left
+    // the editor at, and the vertical zoom window applied to the frequency axis. Both
+    // live here so every shell and both persistence layers see the same values.
+    void setEditorSize(int w, int h);       // 0 = "no stored size"
+    int editorWidth() const { return editorW_.load(std::memory_order_relaxed); }
+    int editorHeight() const { return editorH_.load(std::memory_order_relaxed); }
+
+    void setViewRange(float lo, float hi);  // empty range clears it
+    float viewLow() const { return viewLo_.load(std::memory_order_relaxed); }
+    float viewHigh() const { return viewHi_.load(std::memory_order_relaxed); }
+    bool haveViewRange() const { return viewHigh() > viewLow(); }
+
     // Host notification for parameter changes made by the GUI.
     void setChangeCallback(void (*fn)(void* ctx, int paramId), void* ctx)
     {
@@ -65,6 +77,8 @@ public:
 
 private:
     std::atomic<float> values_[mel::pCount];
+    std::atomic<int> editorW_{ 0 }, editorH_{ 0 };
+    std::atomic<float> viewLo_{ 0.0f }, viewHi_{ 0.0f };
     double sampleRate_ = 48000.0;
     mel::AnalysisConfig applied_;
     bool haveApplied_ = false;
