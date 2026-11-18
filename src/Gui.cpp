@@ -1467,6 +1467,14 @@ LRESULT Gui::handle(UINT msg, WPARAM wp, LPARAM lp)
         if (x >= rangeX_ && x <= rangeX_ + rangeW_ && y >= rangeY_ && y <= rangeY_ + rangeH_) {
             app_.resetRange();
             app_.applyIfNeeded();
+            // Full range means the whole band, so the vertical zoom goes with it:
+            // Low/High cut were being reset while the plot stayed zoomed in.
+            viewFmin_ = app_.get(mel::pFmin);
+            viewFmax_ = app_.get(mel::pFmax);
+            reqFmin_ = viewFmin_;
+            reqFmax_ = viewFmax_;
+            keepView_ = false;
+            viewReady_ = true;
             char msg[96];
             std::snprintf(msg, sizeof msg, "Range reset to %.0f Hz - %.0f Hz", (double)app_.get(mel::pFmin),
                           (double)app_.get(mel::pFmax));

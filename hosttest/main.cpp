@@ -204,9 +204,15 @@ int main(int argc, char** argv)
     bool doEdit = false;
     bool doHover = false;
     bool doParamProbe = false;
+    bool doZoomRange = false;
     for (int i = 2; i < argc; ++i) {
         if (std::strcmp(argv[i], "--panel") == 0) {
             openPanel = true;
+            continue;
+        }
+        if (std::strcmp(argv[i], "--zoomfrange") == 0) {
+            doZoomRange = true;
+            openPanel = true; // these probes live inside the openPanel block
             continue;
         }
         if (std::strcmp(argv[i], "--paramprobe") == 0) {
@@ -973,6 +979,31 @@ int main(int argc, char** argv)
                             SendMessageW(childZ, WM_MOUSEWHEEL, wp, lp);
                         }
                         std::printf("  sent 3 Ctrl+wheel-ins over the plot\n");
+                    }
+                    if (doZoomRange) {
+                        // zoom in vertically, then press Full range: the zoom must go too
+                        HWND childZ2 = GetWindow(parent, GW_CHILD);
+                        for (int k = 0; k < 4; ++k)
+                            SendMessageW(childZ2, WM_MOUSEWHEEL,
+                                         MAKEWPARAM(MK_CONTROL, WHEEL_DELTA), MAKELPARAM(500, 300));
+                        MSG zr;
+                        for (int k = 0; k < 40; ++k) {
+                            while (PeekMessageW(&zr, nullptr, 0, 0, PM_REMOVE)) {
+                                TranslateMessage(&zr);
+                                DispatchMessageW(&zr);
+                            }
+                            Sleep(10);
+                        }
+                        std::printf("  zoomed vertically, then clicking Full range\n");
+                        SendMessageW(childZ2, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(1180, 25));
+                        SendMessageW(childZ2, WM_LBUTTONUP, 0, MAKELPARAM(1180, 25));
+                        for (int k = 0; k < 40; ++k) {
+                            while (PeekMessageW(&zr, nullptr, 0, 0, PM_REMOVE)) {
+                                TranslateMessage(&zr);
+                                DispatchMessageW(&zr);
+                            }
+                            Sleep(10);
+                        }
                     }
                     const ULONGLONG t0 = GetTickCount64();
                     MSG m2;
