@@ -187,6 +187,7 @@ int main(int argc, char** argv)
     vp.fmax = argf(argc, argv, "vmax", analyzer.config().fmax);
     const float rangeDb = argf(argc, argv, "range", 72.0f);
     const float ceilParam = argf(argc, argv, "ceil", -6.0f);
+    vp.lineRange = argf(argc, argv, "line", 60.0f);
     const int autoCeil = (int)argf(argc, argv, "autoceil", 1);
     const mel::LevelRange lr = mel::computeRange(rangeDb, ceilParam, autoCeil != 0, analyzer.peakDb() + 2.0f);
     vp.floorDb = lr.floorDb;

@@ -73,6 +73,11 @@ std::vector<ParamDef> makeParamDefs()
           0.0f, 1.0f, 0.13f, false, false, "", {} });
     add({ "freeze", "Freeze", "View",
           "Stop scrolling and hold the current image", 0, 1, 0, true, false, "", { "Off", "On" } });
+    add({ "line", "Peak range", "View",
+          "How many dB of level the peak traces span, from the ceiling down. Independent of "
+          "the spectrum's Range: keep Range wide to see the spectrum and this narrower so "
+          "quiet partials still read as lighter lines",
+          10.0f, 120.0f, 60.0f, true, false, " dB", {} });
     add({ "ui", "UI scale", "View",
           "Size of the interface text and controls, in percent of the host's scale. The window "
           "opens at this size too",
@@ -1045,7 +1050,13 @@ const float kBgFalloff = 2.0f;
 const float kBgCeil = 0.42f;
     const float kCore = 0.75f;    // next row out from the traced peak
     const float kSkirt = 0.28f;   // one more row of skirt
-    const float kGain = 1.35f;    // overall trace gain
+    // Ink weight follows the peak's own level rather than saturating: with a plain gain
+    // of 1.35 every partial above ~70 % of the level range clipped to full coverage, so
+    // harmonics that get quieter with frequency all drew identically - the traces read
+    // as on/off instead of as a falling series. A gamma keeps the top end solid and
+    // opens the middle, so a partial 30 dB down is visibly lighter than the fundamental.
+const float kGain = 1.3f;      // ceiling gain: only the loudest peaks reach full ink
+const float kInkGamma = 1.35f;   // <1 flattens, >1 separates the quiet partials
 
     const int map = std::max(0, std::min(kNumMaps - 1, vp.cmap));
     // The peak line is drawn in this map's complementary ink, never in the hot
@@ -1129,6 +1140,7 @@ const float kBgCeil = 0.42f;
     }
 
     // ---- the dimmed mel spectrum: this is the only layer the glow touches
+
     for (int y = 0; y < height; ++y) {
         uint16_t* row = &bgIdx[(size_t)y * (size_t)width];
         const int b0 = yB0[(size_t)y], b1 = yB1[(size_t)y];
@@ -1175,16 +1187,21 @@ const float kBgCeil = 0.42f;
             const int ycClamped = std::max(0, std::min(height - 1, yc));
             const int step = yStep[(size_t)ycClamped];
             const float tilt = vp.tilt * std::log2(std::max(1.0f, pk[i].hz) / 1000.0f);
-            float n = (pk[i].db + tilt - vp.floorDb) * invRange;
+            // ink weight from the peak's own level, over the line range anchored at the
+            // ceiling - independent of how wide the spectrum's Range is
+            const float lineRange = std::max(1.0f, vp.lineRange);
+            float n = (pk[i].db + tilt - (vp.ceilDb - lineRange)) / lineRange;
             if (!(n > 0.0f)) continue;
-            n = std::min(1.0f, n) * kGain;
+            n = std::min(1.0f, std::pow(n, kInkGamma) * kGain);
             const int span = 2 * step;
             for (int d = -span; d <= span; ++d) {
                 const int y = yc + d;
                 if (y < 0 || y >= height) continue;
                 const int ad = std::abs(d);
                 const float w = ad == 0 ? 1.0f : (ad <= step ? kCore : kSkirt);
-                float v = n * w;
+                // a quiet partial is also thinner, not just lighter: on a 1-2 px line the
+                // width carries more of the impression than the alpha alone
+                float v = n * w * (0.72f + 0.28f * n);
                 if (v > 1.0f) v = 1.0f;
                 unsigned char& cell = cover[(size_t)y * (size_t)width + (size_t)x];
                 const unsigned char iv = (unsigned char)(v * 255.0f);
@@ -1216,7 +1233,9 @@ const float kBgCeil = 0.42f;
                         if (y < 0 || y >= height) continue;
                         const int ad = std::abs(d);
                         const float w = ad == 0 ? 1.0f : (ad <= step ? kCore : kSkirt);
-                        float v = n * w * f;
+                        // a quiet partial is also thinner, not just lighter: on a 1-2 px line the
+                        // width carries more of the impression than the alpha alone
+                        float v = n * w * (0.62f + 0.38f * n) * f;
                         if (v > 1.0f) v = 1.0f;
                         unsigned char& cell = cover[(size_t)y * (size_t)width + (size_t)xx];
                         const unsigned char iv = (unsigned char)(v * 255.0f);

@@ -40,6 +40,7 @@ enum ParamIndex {
     pKeyLines,
     pFreeze,
     pUiScale, // appended last so existing parameter ids do not move
+    pLineRange, // same rule: never insert, or saved values shift meaning
     pCount
 };
 
@@ -257,6 +258,10 @@ struct ViewParams {
     int axis = 0;      // 0 mel, 1 log freq, 2 linear freq
     float floorDb = -95.0f;
     float ceilDb = -6.0f;
+    // The peak traces have their own dB window: the spectrum can span 120 dB while
+    // the lines only spread the top 60, which is what keeps quiet partials readable
+    // as lighter lines instead of clipping to full ink.
+    float lineRange = 60.0f;
     float gamma = 1.0f;
     float tilt = 0.0f;  // dB per octave around 1 kHz
     float glow = 0.0f;  // 0..1 -> blur radius

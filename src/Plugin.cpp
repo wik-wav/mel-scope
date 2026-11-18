@@ -297,6 +297,7 @@ mel::ViewParams App::viewParams() const
     const mel::LevelRange lr = levels();
     vp.floorDb = lr.floorDb;
     vp.ceilDb = lr.ceilDb;
+    vp.lineRange = get(mel::pLineRange);
     vp.now = frozen() ? frozenTime_ : engine.latestTime();
     {
         const auto& fr = engine.frames();
