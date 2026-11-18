@@ -221,6 +221,12 @@ bigger text rather than a bigger spectrogram only.
 each parameter group does, and the intended use of the two displays. It scrolls with
 the wheel, and closes on Esc, the CLOSE button, or a click outside the sheet.
 
+**The readout** under the pointer names the note the frequency belongs to, then the
+frequency, the level and the time. The note is the nearest semitone, not the one below:
+a note's region runs +/-50 cents around its centre, so 216 Hz reads `A3 -35c` and 213 Hz
+reads `G#3 +46c`. The cents figure is the distance from that centre, which is what tells
+you how sharp or flat a sung note actually is.
+
 The point worth reading there: **Harmonics is the intended view for a vocal or any
 single mono source** - it traces the partials, so pitch movement reads at a glance.
 **Spectrum is simply a normal spectrogram** for general use: no peak line, the raw
