@@ -167,8 +167,8 @@ int main(int argc, char** argv)
             } else {
 
             // the point of the whole exercise: attached() must build the real editor
-            HWND parent = CreateWindowExW(0, L"STATIC", L"host", WS_OVERLAPPEDWINDOW, 0, 0, 900, 600,
-                                          nullptr, nullptr, nullptr, nullptr);
+            HWND parent = CreateWindowExW(0, L"STATIC", L"host", WS_OVERLAPPEDWINDOW | WS_VISIBLE, 0, 0,
+                                          900, 600, nullptr, nullptr, nullptr, nullptr);
             check(parent != nullptr, "test parent window created");
             if (parent) {
                 check(view->attached(parent, kPlatformTypeHWND) == kResultOk, "attached() accepts HWND");
@@ -187,6 +187,107 @@ int main(int argc, char** argv)
                     GetClassNameW(child, cls, 64);
                     std::fprintf(stderr, "      editor class: %ls\n", cls);
                 }
+                    // pump like a host UI thread, and give the analyser some audio first
+                    {
+                        auto pump = [](int ms) {
+                            MSG m;
+                            const ULONGLONG t0 = GetTickCount64();
+                            while (GetTickCount64() - t0 < (ULONGLONG)ms) {
+                                while (PeekMessageW(&m, nullptr, 0, 0, PM_REMOVE)) {
+                                    TranslateMessage(&m);
+                                    DispatchMessageW(&m);
+                                }
+                                Sleep(2);
+                            }
+                        };
+                        if (proc) {
+                            const int frames = 512;
+                            std::vector<std::vector<float>> a(2, std::vector<float>(frames));
+                            std::vector<std::vector<float>> b(2, std::vector<float>(frames));
+                            float* ip[2] = { a[0].data(), a[1].data() };
+                            float* op[2] = { b[0].data(), b[1].data() };
+                            AudioBusBuffers ib{}, ob{};
+                            ib.numChannels = 2;
+                            ib.channelBuffers32 = ip;
+                            ob.numChannels = 2;
+                            ob.channelBuffers32 = op;
+                            ProcessData pd{};
+                            pd.numSamples = frames;
+                            pd.numInputs = 1;
+                            pd.inputs = &ib;
+                            pd.numOutputs = 1;
+                            pd.outputs = &ob;
+                            static double phase = 0.0;
+                            for (int blk = 0; blk < 120; ++blk) {
+                                for (int i = 0; i < frames; ++i, phase += 1.0) {
+                                    const float s = 0.3f * std::sin((float)(2.0 * 3.14159265358979 * 330.0 * phase / 44100.0));
+                                    a[0][(size_t)i] = a[1][(size_t)i] = s;
+                                }
+                                proc->process(pd);
+                            }
+                        }
+                        pump(400);
+                    }
+
+                    // Does it actually draw? Force a paint and read the pixels back.
+                    InvalidateRect(child, nullptr, TRUE);
+                    UpdateWindow(child);
+                    {
+                        RECT cr{};
+                        GetClientRect(child, &cr);
+                        const int w = cr.right - cr.left, h = cr.bottom - cr.top;
+                        HDC dc = GetDC(child);
+                        HDC mem = CreateCompatibleDC(dc);
+                        HBITMAP bmp = CreateCompatibleBitmap(dc, w, h);
+                        HGDIOBJ oldBmp = SelectObject(mem, bmp);
+                        BitBlt(mem, 0, 0, w, h, dc, 0, 0, SRCCOPY);
+
+                        // count distinct colours on a coarse grid: a blank or single-colour
+                        // surface means the editor painted nothing
+                        int distinct = 0;
+                        COLORREF seen[64] = {};
+                        for (int gy = 4; gy < h; gy += 16)
+                            for (int gx = 4; gx < w; gx += 16) {
+                                const COLORREF c = GetPixel(mem, gx, gy);
+                                bool dup = false;
+                                for (int k = 0; k < distinct; ++k)
+                                    if (seen[k] == c) { dup = true; break; }
+                                if (!dup && distinct < 64) seen[distinct++] = c;
+                            }
+                        std::fprintf(stderr, "      distinct colours on the editor: %d\n", distinct);
+                        check(distinct > 4, "editor renders more than a blank surface");
+
+                        // dump it so the render can be looked at
+                        BITMAPFILEHEADER fh{};
+                        BITMAPINFOHEADER ih{};
+                        ih.biSize = sizeof(ih);
+                        ih.biWidth = w;
+                        ih.biHeight = h;
+                        ih.biPlanes = 1;
+                        ih.biBitCount = 24;
+                        ih.biCompression = BI_RGB;
+                        const int stride = ((w * 3 + 3) / 4) * 4;
+                        std::vector<unsigned char> bits((size_t)stride * (size_t)h);
+                        BITMAPINFO bi{};
+                        bi.bmiHeader = ih;
+                        GetDIBits(mem, bmp, 0, (UINT)h, bits.data(), &bi, DIB_RGB_COLORS);
+                        fh.bfType = 0x4D42;
+                        fh.bfOffBits = sizeof(fh) + sizeof(ih);
+                        fh.bfSize = fh.bfOffBits + (DWORD)bits.size();
+                        if (FILE* f = std::fopen("editor_render.bmp", "wb")) {
+                            std::fwrite(&fh, sizeof(fh), 1, f);
+                            std::fwrite(&ih, sizeof(ih), 1, f);
+                            std::fwrite(bits.data(), 1, bits.size(), f);
+                            std::fclose(f);
+                            std::fprintf(stderr, "      wrote editor_render.bmp (%dx%d)\n", w, h);
+                        }
+
+                        SelectObject(mem, oldBmp);
+                        DeleteObject(bmp);
+                        DeleteDC(mem);
+                        ReleaseDC(child, dc);
+                    }
+
                 view->removed();
                 DestroyWindow(parent);
                 }

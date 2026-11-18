@@ -399,7 +399,14 @@ tresult PLUGIN_API MelScopeVST3::setupProcessing(ProcessSetup& setup)
 
 tresult PLUGIN_API MelScopeVST3::setActive(TBool state)
 {
-    if (!state) app_.clearHistory();
+    if (state) {
+        // The CLAP shell starts the analyser from its pluginActivate; this shell has to
+        // do the same or the editor draws its chrome over an empty plot.
+        app_.applyAnalysis();
+        app_.engine.start();
+    } else {
+        app_.clearHistory();
+    }
     return kResultOk;
 }
 
