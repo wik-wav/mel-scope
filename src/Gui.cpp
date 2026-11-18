@@ -968,8 +968,19 @@ void Gui::paint()
         // as the time axis), on a plate that follows the pointer so it never sits on
         // the axis labels and never lets the guide lines show through the numbers
         char line[192];
-        const std::string note = noteName(hzToNote(hz));
-        std::snprintf(line, sizeof line, "%s   %s   %.1f dB   %.2f s", note.c_str(),
+        // Nearest semitone, not the floor of it: truncating put every note's boundary at
+        // its own centre frequency, so 219 Hz read G#3 and A3 only began at 220. A singer
+        // treats a note as a region around its centre, so round to the closest semitone
+        // (boundaries at the midpoint, i.e. +/-50 cents) and say how far off it is.
+        const float noteValue = hzToNote(hz);
+        const int noteIndex = (int)std::lround(noteValue);
+        const float cents = (noteValue - (float)noteIndex) * 100.0f;
+        char note[48];
+        if (std::fabs(cents) < 0.5f)
+            std::snprintf(note, sizeof note, "%s", noteName(noteIndex));
+        else
+            std::snprintf(note, sizeof note, "%s %+.0f\xC2\xA2", noteName(noteIndex), (double)cents);
+        std::snprintf(line, sizeof line, "%s   %s   %.1f dB   %.2f s", note,
                       hzText(hz).c_str(), (double)db, t - vp.now);
         const std::wstring wide = widen(line);
         RectF measured;
