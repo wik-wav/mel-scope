@@ -7,7 +7,7 @@
 
 #include "Vst3Plugin.h"
 
-#define kMelScopeVersion "1.1.0"
+#define kMelScopeVersion "1.2.0"
 #define kMelScopeName "Mel Scope"
 
 using namespace Steinberg;
