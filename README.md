@@ -304,6 +304,51 @@ the shell.
 | `offline/melrender.cpp` | WAV -> image using the same analyser (visual verification) |
 | `offline/selftest.cpp` | sample-rate / mapping / FFT-size checks |
 | `hosttest/main.cpp` | loads the .clap like a DAW, checks ABI, audio, state, GUI |
+| `vst3/Vst3Plugin.cpp` | VST3 shell: same engine and editor behind the SDK's single-component model |
+| `vst3/Vst3Entry.cpp` | module entry and class registration (`GetPluginFactory`, `InitDll`) |
+| `vst3/Vst3HostTest.cpp` | loads the .vst3 like a host: factory, audio, state, parameters, editor |
+| `vst3/build-vst3.ps1` | builds `dist\MelScope.vst3` (also compiles the SDK support files) |
+
+## VST3 build
+
+The same engine and the same Win32/GDI+ editor, wrapped in the VST3 SDK's
+single-component model (one class is component, controller and audio processor). No
+code is duplicated: `Vst3Plugin.cpp` owns a `melscope::App`, mirrors its 24 parameters
+through the VST3 parameter API, and hosts the existing `Gui` window inside the HWND the
+host passes to `IPlugView::attached`.
+
+```
+powershell -ExecutionPolicy Bypass -File vst3\build-vst3.ps1
+dist\MelScope.vst3\Contents\x86_64-win\MelScope.vst3     # ~1.6 MB
+powershell -ExecutionPolicy Bypass -File vst3\build-vst3.ps1 -RunTests
+```
+
+Needs the VST3 SDK next to JUCE in `_tools/` (also not versioned, ~300 MB):
+
+```
+git clone --depth 1 --recurse-submodules --shallow-submodules `
+    https://github.com/steinbergmedia/vst3sdk.git _tools/vst3sdk
+```
+
+**JUCE is not used.** It is present in `_tools/` but JUCE 8 refuses MinGW
+(`#error "MinGW is not supported"`), so the wrapper is written straight against the
+VST3 interfaces, which do compile with this toolchain. Only a handful of SDK support
+files are compiled (`vstsinglecomponenteffect`, `vstcomponentbase`, `vstparameters`,
+`vstbus`, `pluginfactory`, `dllmain`, `fstring`, `fobject`, `flock`, …).
+
+**Installing:** copy the whole `MelScope.vst3` bundle into your VST3 folder
+(`C:\Program Files\Common Files\VST3`) and let Bitwig scan, or point Bitwig's plugin
+location at `dist/`. Settings and presets are shared with the CLAP build through
+`%APPDATA%\MelScope\settings.ini`, and the state blob is the same format, so a project
+can be swapped between the two shells.
+
+**Licensing:** the VST3 SDK is GPLv3-or-proprietary and the SDK headers end up inside
+the binary, so distributing a VST3 build carries the SDK's terms (the CLAP build does
+not - CLAP is MIT). Personal use is unaffected.
+
+Differences from the CLAP build, both by design: the VST3 has no `canResize`-driven
+layout negotiation beyond the editor's own size request, and there is no
+`moduleinfo.json`, so hosts fall back to reading the DLL's factory directly.
 
 ## Version control
 

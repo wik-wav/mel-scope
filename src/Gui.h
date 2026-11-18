@@ -19,6 +19,7 @@ public:
 
     // All of these run on the host's main (GUI) thread.
     bool create(HWND parent, int width, int height);
+    void setResizeCallback(std::function<void()> cb) { onScaleResize_ = std::move(cb); }
     void destroy();
     void show();
     void hide();
@@ -65,7 +66,7 @@ private:
     void setStatus(const std::string& text);
     // host DPI scale times the user's UI scale parameter
     void applyUserScale();
-    void setResizeCallback(std::function<void()> cb) { onScaleResize_ = std::move(cb); }
+
     void zoomFrequency(int mouseY, int wheelDelta);
     void panBarRect(float& x, float& y, float& w, float& h) const;
     void clampView();

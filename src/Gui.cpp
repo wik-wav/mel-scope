@@ -28,7 +28,11 @@ namespace {
 struct GdiplusInit {
     ULONG_PTR token = 0;
     GdiplusInit() { GdiplusStartupInput in; GdiplusStartup(&token, &in, nullptr); }
-    ~GdiplusInit() { GdiplusShutdown(token); }
+    // Deliberately never shut GDI+ down. This object is a function-local static, so its
+    // destructor runs during DLL_PROCESS_DETACH where GdiplusShutdown blocks on the
+    // loader lock - that hung plugin unload (found by the VST3 host test). The process
+    // reclaims the token on exit anyway.
+    ~GdiplusInit() {}
 };
 GdiplusInit& gp() { static GdiplusInit i; return i; }
 

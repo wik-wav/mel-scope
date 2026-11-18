@@ -20,3 +20,6 @@ _analysis/*
 settings.ini
 *.bmp
 *.log
+
+# VST3 build scratch
+build-vst3/
