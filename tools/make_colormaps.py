@@ -6,6 +6,7 @@ screenshot is dominated by one background colour and a magenta->orange ramp,
 so we sort its lit pixels by luminance and take the median RGB per bin.
 """
 import os
+import sys
 import numpy as np
 import matplotlib.cm as cm
 from PIL import Image
@@ -13,10 +14,15 @@ from PIL import Image
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(os.path.dirname(HERE), "src", "Colormaps.h")
 
-REF = r"C:\Users\wyash\.dsh\attachments\v1\objects\cb\cb16717874cd501c6f71f4ce04df245a2807b93a34fa595ec3597d9425446f8b"
+# Ember is derived from a reference screenshot; pass its path as argv[1]. Without it
+# every other map is still generated exactly (they come from matplotlib).
+REF = sys.argv[1] if len(sys.argv) > 1 else None
 
 
 def ember_stops():
+    if not REF:
+        print('no reference image given: skipping Ember, keeping the existing stops')
+        return None
     a = np.asarray(Image.open(REF).convert("RGB")).astype(np.float32)
     flat = a.reshape(-1, 3).astype(np.uint8)
     cols, counts = np.unique(flat, axis=0, return_counts=True)

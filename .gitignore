@@ -13,8 +13,6 @@ _tools/
 _analysis/*
 # ... but the generators that produce checked-in files are kept, so the headers
 # can be rebuilt from their sources
-!_analysis/make_colormaps.py
-!_analysis/make_font2.py
 
 # per-run state
 settings.ini
