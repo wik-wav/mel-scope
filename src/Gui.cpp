@@ -494,10 +494,22 @@ void Gui::layout()
     helpY_ = freezeY_;
 
     const auto& defs = mel::paramDefs();
+    // Display order, independent of id order: Peak range belongs beside Spectrum range
+    // rather than at the end of View, but moving it in the id table would shift the ids
+    // of everything after it and reinterpret saved state.
+    static const int kPanelOrder[] = {
+        mel::pFft,    mel::pOverlap, mel::pBands,   mel::pWindow, mel::pChannel, mel::pFmin,
+        mel::pFmax,   mel::pRange,   mel::pLineRange, mel::pCeil, mel::pAutoCeil, mel::pSpan,
+        mel::pMode,   mel::pTheme,   mel::pAxis,    mel::pCmap,   mel::pGamma,  mel::pTilt,
+        mel::pGlow,   mel::pGrain,   mel::pSmooth,  mel::pKeyLines, mel::pFreeze, mel::pUiScale,
+    };
+    static_assert(sizeof(kPanelOrder) / sizeof(kPanelOrder[0]) == (size_t)mel::pCount,
+                  "the panel order must list every parameter exactly once");
     int nParams = 0, nGroups = 0;
     const char* lastGroup = nullptr;
-    for (const auto& d : defs) {
-        if (!lastGroup || std::strcmp(lastGroup, d.group) != 0) { ++nGroups; lastGroup = d.group; }
+    for (int pid : kPanelOrder) {
+        const char* grp = defs[(size_t)pid].group;
+        if (!lastGroup || std::strcmp(lastGroup, grp) != 0) { ++nGroups; lastGroup = grp; }
         ++nParams;
     }
 
@@ -523,7 +535,8 @@ void Gui::layout()
     // scrolling must reveal later rows: content moves UP as scrollY_ grows
     float y = (float)panelY_ + topPad - scrollY_;
     lastGroup = nullptr;
-    for (const auto& d : defs) {
+    for (int pid : kPanelOrder) {
+        const auto& d = defs[(size_t)pid];
         if (!lastGroup || std::strcmp(lastGroup, d.group) != 0) {
             Row r;
             r.pid = -1;
@@ -535,7 +548,7 @@ void Gui::layout()
             lastGroup = d.group;
         }
         Row r;
-        r.pid = (int)(&d - defs.data());
+        r.pid = pid;
         r.y = y;
         r.h = rowH;
         rows_.push_back(r);
@@ -565,6 +578,8 @@ void Gui::layout()
 // (and therefore blank the held image) is disabled instead of silently wiping it.
 bool Gui::rowBlocked(int pid) const
 {
+    // the peak-line range means nothing while the plain spectrum is showing
+    if (pid == mel::pLineRange && app_.getInt(mel::pMode) == 0) return true;
     if (!app_.getBool(mel::pFreeze)) return false;
     switch (pid) {
     case mel::pFft:
@@ -1204,6 +1219,16 @@ void Gui::drawPanel()
                      RectF(box.X + 4.0f * s, box.Y, box.Width - 8.0f * s, box.Height),
                      res_->value.get(), kText, StringAlignmentFar);
         } else {
+            // hover cue on the value box, so it is clear the number is clickable
+            const bool inValueBox = paramEditable(r.pid) && !blocked
+                                    && hoverX_ >= (int)(innerX + innerW * 0.66f) && hoverX_ <= (int)valueRight
+                                    && hoverY_ >= r.y && hoverY_ <= r.y + r.h;
+            if (inValueBox) {
+                const RectF box(innerX + innerW * 0.66f, r.y + 1.0f * s, innerW * 0.34f - 2.0f * s,
+                                textH - 2.0f * s);
+                fillRound(g, box, 0.0f, kSurfaceMuted);
+                strokeRound(g, box, 0.0f, kBorder);
+            }
             drawText(g, widen(val), RectF(innerX, r.y, valueRight - innerX, textH), res_->value.get(),
                      valueColour, StringAlignmentFar);
         }
@@ -1359,7 +1384,13 @@ LRESULT Gui::handle(UINT msg, WPARAM wp, LPARAM lp)
             panViewTo((float)y);
             return 0;
         }
-        if (dragPid_ >= 0) {
+        if (editPendingPid_ >= 0 && std::abs(x - editPendingX_) > 3) {
+            // it was a drag after all: slide from where the value already is
+            const int pid = editPendingPid_;
+            editPendingPid_ = -1;
+            beginDrag(pid, editPendingX_);
+            updateDrag(x);
+        } else if (dragPid_ >= 0) {
             updateDrag(x);
         } else if (dropdown_.open) {
             const int item = dropdownItemAt(x, y);
@@ -1493,19 +1524,20 @@ LRESULT Gui::handle(UINT msg, WPARAM wp, LPARAM lp)
         if (r >= 0) {
             const int pid = rows_[(size_t)r].pid;
             if (rowBlocked(pid)) return 0;
-            {
-                // clicking the number starts an inline edit; dragging the row changes it
-                const float s = scale_;
-                const float innerX = (float)panelX_ + 12.0f * s;
-                const float innerW = (float)panelW_ - 24.0f * s;
-                if (paramEditable(pid) && (float)x > innerX + innerW * 0.45f) {
-                    beginEdit(pid);
-                    return 0;
-                }
-            }
             const auto& def = mel::paramDefs()[(size_t)pid];
             if (!def.choices.empty()) {
                 openDropdown(pid);
+                return 0;
+            }
+            // The value box must not swallow the slider. A press on it is remembered and
+            // only resolved on release: moving starts a drag (from the value's current
+            // position, so nothing jumps), releasing in place opens the editor.
+            const float s = scale_;
+            const float innerX = (float)panelX_ + 12.0f * s;
+            const float innerW = (float)panelW_ - 24.0f * s;
+            if (paramEditable(pid) && (float)x > innerX + innerW * 0.66f) {
+                editPendingPid_ = pid;
+                editPendingX_ = x;
             } else {
                 beginDrag(pid, x);
             }
@@ -1529,6 +1561,12 @@ LRESULT Gui::handle(UINT msg, WPARAM wp, LPARAM lp)
         return 0;
     }
     case WM_LBUTTONUP:
+        if (editPendingPid_ >= 0) {
+            const int pid = editPendingPid_;
+            editPendingPid_ = -1;
+            beginEdit(pid);
+            return 0;
+        }
         panDrag_ = false;
         if (dragPid_ >= 0) {
             dragPid_ = -1;
@@ -1997,7 +2035,7 @@ const HelpSection kHelpSections[] = {
       L"Ctrl + wheel - zoom the frequency range around the pointer (the frequency under\n"
       L"the cursor stays under it). The same zoom works with no modifier when the wheel\n"
       L"is over the piano keyboard on the left.\n"
-      L"Shift + wheel - change the dynamic range (how many dB the colours cover).\n"
+      L"Shift + wheel - change the spectrum range (how many dB the colours cover).\n"
       L"Drag on the plot - pan the zoomed range; the cursor becomes a resize arrow.\n"
       L"Drag a row - change its value (hold Shift for fine steps).\n"
       L"Double-click a row - reset that parameter to its default.\n"
@@ -2051,9 +2089,10 @@ const HelpSection kHelpSections[] = {
       L"Glow - soft bloom over the wash; it never touches the peak lines.\n"
       L"Grain - fine, stable paper texture.\n"
       L"Smoothing - temporal averaging between frames.\n"
-      L"Peak range - dB span of the peak traces, counted down from the ceiling. Keep\n"
-      L"it narrower than Range: Range sets the spectrum, this sets the lines, so quiet\n"
-      L"partials stay readable as lighter lines at a wide Range.\n"
+      L"Peak range - dB span of the peak traces, counted down from the ceiling. Keep it\n"
+      L"narrower than Spectrum range: that one sets the spectrum image, this one sets the\n"
+      L"lines, so quiet partials stay readable as lighter lines. Greyed out unless Display\n"
+      L"is Harmonics, since a plain spectrum has no traces.\n"
       L"Key guides - strength of the piano-key guide lines across the plot.\n"
       L"UI scale - size of the text and controls, in percent of the host's scale. The\n"
       L"window opens at this size too, so raising it also asks the host for a bigger\n"

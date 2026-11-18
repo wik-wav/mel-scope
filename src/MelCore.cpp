@@ -37,8 +37,9 @@ std::vector<ParamDef> makeParamDefs()
           "Lowest frequency shown", 10.0f, 4000.0f, 30.0f, false, true, " Hz", {} });
     add({ "fmax", "High cut", "Range",
           "Highest frequency shown (clamped to Nyquist)", 500.0f, 24000.0f, 1500.0f, false, true, " Hz", {} });
-    add({ "range", "Range", "Range",
-          "Dynamic range in dB below the ceiling", 15.0f, 120.0f, 120.0f, false, false, " dB", {} });
+    add({ "range", "Spectrum range", "Range",
+          "Dynamic range of the spectrum image in dB below the ceiling", 15.0f, 120.0f, 120.0f, false,
+          false, " dB", {} });
     add({ "ceil", "Ceiling", "Range",
           "Top of the colour scale in dB, used when Auto level is off (0 dB = full-scale sine)",
           -60.0f, 6.0f, 6.0f, false, false, " dB", {} });
@@ -73,15 +74,15 @@ std::vector<ParamDef> makeParamDefs()
           0.0f, 1.0f, 0.13f, false, false, "", {} });
     add({ "freeze", "Freeze", "View",
           "Stop scrolling and hold the current image", 0, 1, 0, true, false, "", { "Off", "On" } });
-    add({ "line", "Peak range", "View",
-          "How many dB of level the peak traces span, from the ceiling down. Independent of "
-          "the spectrum's Range: keep Range wide to see the spectrum and this narrower so "
-          "quiet partials still read as lighter lines",
-          10.0f, 120.0f, 60.0f, true, false, " dB", {} });
     add({ "ui", "UI scale", "View",
           "Size of the interface text and controls, in percent of the host's scale. The window "
           "opens at this size too",
           75, 200, 115, true, false, " %", {} });
+    add({ "line", "Peak range", "Range",
+          "How many dB of level the peak traces span, counted down from the ceiling. Set apart "
+          "from Spectrum range: keep that wide to see the spectrum and this narrower so quiet "
+          "partials still read as lighter lines",
+          10.0f, 120.0f, 60.0f, true, false, " dB", {} });
 
     // choices for the colormap come from the generated table
     ParamDef& cmap = d[pCmap];
@@ -102,15 +103,20 @@ bool paramTableIsConsistent()
     const auto& d = paramDefs();
     if ((int)d.size() != (int)pCount) return false;
     struct Expect { const char* key; int id; };
+    // Every parameter, in id order: a partial list is how two adjacent ids got their
+    // keys swapped without any check noticing.
     static const Expect kExpect[] = {
-        { "fft", pFft },         { "overlap", pOverlap }, { "bands", pBands },
-        { "window", pWindow },   { "channel", pChannel }, { "fmin", pFmin },
-        { "fmax", pFmax },       { "range", pRange },     { "ceil", pCeil },
-        { "autoceil", pAutoCeil }, { "span", pSpan }, { "mode", pMode },   { "theme", pTheme }, { "axis", pAxis },
-        { "cmap", pCmap },   { "gamma", pGamma },     { "tilt", pTilt },
-        { "glow", pGlow },   { "grain", pGrain }, { "smooth", pSmooth },   { "keys", pKeyLines },
-        { "freeze", pFreeze },
+        { "fft", pFft },           { "overlap", pOverlap }, { "bands", pBands },
+        { "window", pWindow },     { "channel", pChannel }, { "fmin", pFmin },
+        { "fmax", pFmax },         { "range", pRange },     { "ceil", pCeil },
+        { "autoceil", pAutoCeil }, { "span", pSpan },       { "mode", pMode },
+        { "theme", pTheme },       { "axis", pAxis },       { "cmap", pCmap },
+        { "gamma", pGamma },       { "tilt", pTilt },       { "glow", pGlow },
+        { "grain", pGrain },       { "smooth", pSmooth },   { "keys", pKeyLines },
+        { "freeze", pFreeze },     { "ui", pUiScale },      { "line", pLineRange },
     };
+    static_assert(sizeof(kExpect) / sizeof(kExpect[0]) == (size_t)pCount,
+                  "the expected-key table must list every parameter");
     for (const auto& e : kExpect)
         if (paramIndexForKey(e.key) != e.id) return false;
     return true;

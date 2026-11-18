@@ -79,6 +79,8 @@ private:
     void commitEdit();
     void cancelEdit();
     int editPid_ = -1;
+    int editPendingPid_ = -1; // pressed on the value: click types, drag slides
+    int editPendingX_ = 0;
     std::string editText_;
     bool editFresh_ = false;
     void stepperRects(float rowY, float rowH, float innerX, float innerW, float* out) const;

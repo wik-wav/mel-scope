@@ -75,7 +75,7 @@ competing horizontal grid at arbitrary frequencies.
 | | Input | Mix | Mix / Left / Right (mono or stereo input both work) |
 | Range | Low cut | 30 Hz | lowest frequency shown |
 | | High cut | 1.5 kHz | highest frequency analysed (clamped to Nyquist). Changing it rebuilds the bank; Ctrl+wheel only moves the view inside it |
-| | Range | 120 dB | dynamic range below the ceiling |
+| | Spectrum range | 120 dB | dynamic range of the spectrum image below the ceiling |
 | | Ceiling | +6 dB | top of the colour scale when Auto level is off |
 | | Auto level | Off | ceiling follows the loudest band (0 dB = full-scale sine) |
 | View | Time span | 9.15 s | history across the width (wheel over the plot zooms it; Ctrl+wheel zooms frequency around the pointer) |
@@ -90,7 +90,7 @@ competing horizontal grid at arbitrary frequencies.
 | | Smoothing | 6 % | temporal averaging between frames |
 | | Key guides | 13 % | strength of the piano-key centre lines (0 = off) |
 | | Freeze | Off | hold the picture (double-click the plot also toggles it) |
-| | Peak range | 60 dB | how many dB of level the peak traces span, counted down from the ceiling |
+| | Peak range | 60 dB | dynamic range of the peak traces, counted down from the ceiling; independent of Spectrum range, and greyed out in Spectrum display |
 | | UI scale | 115 % | size of the text and controls, in percent of the host's scale. The window opens at this size too |
 
 The panel is a drawer that opens from the left edge; the wheel scrolls it when the

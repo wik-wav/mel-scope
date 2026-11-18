@@ -203,8 +203,14 @@ int main(int argc, char** argv)
     bool doScroll = false;
     bool doEdit = false;
     bool doHover = false;
+    bool doParamProbe = false;
     for (int i = 2; i < argc; ++i) {
         if (std::strcmp(argv[i], "--panel") == 0) {
+            openPanel = true;
+            continue;
+        }
+        if (std::strcmp(argv[i], "--paramprobe") == 0) {
+            doParamProbe = true;
             openPanel = true;
             continue;
         }
@@ -726,6 +732,89 @@ int main(int argc, char** argv)
                 std::printf("  froze, then hovered twice\n");
                 start = GetTickCount64();
                 sent = sentWarm;
+            }
+
+            if (doParamProbe) {
+                // drag the Peak range row and prove UI scale does not move with it
+                HWND childP = GetWindow(parent, GW_CHILD);
+                for (int q3 = 0; q3 < 40; ++q3) {
+                    MSG pm;
+                    while (PeekMessageW(&pm, nullptr, 0, 0, PM_REMOVE)) {
+                        TranslateMessage(&pm);
+                        DispatchMessageW(&pm);
+                    }
+                    Sleep(10);
+                }
+                const clap_plugin_params_t* prm =
+                    (const clap_plugin_params_t*)plugin->get_extension(plugin, CLAP_EXT_PARAMS);
+                const auto readByKey = [&](const char* key) -> float {
+                    if (!prm) return -1.0f;
+                    const uint32_t n = prm->count(plugin);
+                    for (uint32_t i = 0; i < n; ++i) {
+                        clap_param_info_t info{};
+                        if (!prm->get_info(plugin, i, &info)) continue;
+                        if (std::strcmp(info.name, key) == 0) {
+                            double v = 0.0;
+                            if (prm->get_value(plugin, info.id, &v)) return (float)v;
+                        }
+                    }
+                    return -1.0f;
+                };
+                const auto pump = [&](int ms) {
+                    MSG pm;
+                    for (int k = 0; k < ms / 5; ++k) {
+                        while (PeekMessageW(&pm, nullptr, 0, 0, PM_REMOVE)) {
+                            TranslateMessage(&pm);
+                            DispatchMessageW(&pm);
+                        }
+                        Sleep(5);
+                    }
+                };
+                // row y comes from MELSCOPE_PROBE_Y so it tracks the panel layout
+                // the panel has to be open before any row exists
+                SendMessageW(childP, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(45, 26));
+                SendMessageW(childP, WM_LBUTTONUP, 0, MAKELPARAM(45, 26));
+                pump(160);
+                int py = 342;
+                if (const char* e = std::getenv("MELSCOPE_PROBE_Y")) py = std::atoi(e);
+                std::printf("  start   : ui=%.0f line=%.0f\n", readByKey("UI scale"),
+                            readByKey("Peak range"));
+
+                // 1. drag on the rail: Peak range must move, UI scale must not
+                SendMessageW(childP, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(120, py));
+                for (int step = 1; step <= 6; ++step) {
+                    SendMessageW(childP, WM_MOUSEMOVE, MK_LBUTTON, MAKELPARAM(120 + step * 12, py));
+                    pump(15);
+                }
+                SendMessageW(childP, WM_LBUTTONUP, 0, MAKELPARAM(192, py));
+                pump(60);
+                std::printf("  rail    : ui=%.0f line=%.0f\n", readByKey("UI scale"),
+                            readByKey("Peak range"));
+
+                // 2. drag that STARTS on the value box: it must slide, not open the editor
+                SendMessageW(childP, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(300, py));
+                for (int step = 1; step <= 6; ++step) {
+                    SendMessageW(childP, WM_MOUSEMOVE, MK_LBUTTON, MAKELPARAM(300 + step * 8, py));
+                    pump(15);
+                }
+                SendMessageW(childP, WM_LBUTTONUP, 0, MAKELPARAM(348, py));
+                pump(80);
+                std::printf("  onvalue : ui=%.0f line=%.0f\n", readByKey("UI scale"),
+                            readByKey("Peak range"));
+
+                // 3. a click on the value box (no movement) opens the editor
+                SendMessageW(childP, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(300, py));
+                SendMessageW(childP, WM_LBUTTONUP, 0, MAKELPARAM(300, py));
+                pump(120);
+                std::printf("  clicked : ui=%.0f line=%.0f\n", readByKey("UI scale"),
+                            readByKey("Peak range"));
+                // if the editor really opened, typing 42 and pressing Return lands 42
+                SendMessageW(childP, WM_CHAR, (WPARAM)'4', 0);
+                SendMessageW(childP, WM_CHAR, (WPARAM)'2', 0);
+                SendMessageW(childP, WM_KEYDOWN, VK_RETURN, 0);
+                pump(120);
+                std::printf("  typed42 : ui=%.0f line=%.0f (42 means the editor opened)\n",
+                            readByKey("UI scale"), readByKey("Peak range"));
             }
 
             MSG msg;
