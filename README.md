@@ -304,6 +304,23 @@ the shell.
 | `offline/selftest.cpp` | sample-rate / mapping / FFT-size checks |
 | `hosttest/main.cpp` | loads the .clap like a DAW, checks ABI, audio, state, GUI |
 
+## Version control
+
+`git` is initialised here, tagging the first tracked state as **`baseline`**. Source,
+docs and the generator scripts are tracked; `build/`, `dist/`, `_tools/` (1.4 GB
+toolchain) and `_analysis/` (capture scratch) are ignored by `.gitignore`, so the repo
+stays under a megabyte.
+
+Because `_tools/` is not tracked, a fresh clone needs the toolchain downloaded into it
+before `build.ps1` works.
+
+```
+git log --oneline                 # what changed
+git diff                          # what is uncommitted right now
+git revert <commit>               # undo a change, keeping the history
+git checkout baseline -- src      # put the sources back to the shipped state
+```
+
 ## Verification
 
 ```
