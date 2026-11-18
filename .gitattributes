@@ -1,0 +1,4 @@
+# source files are LF on disk; keep them that way so patches do not churn
+* text=auto eol=lf
+*.png binary
+*.clap binary

@@ -1,0 +1,22 @@
+# build output
+build/
+dist/
+*.clap
+*.exe
+*.o
+*.dll
+
+# the toolchain is downloaded, not versioned (MinGW-w64 + CLAP headers, ~1.4 GB)
+_tools/
+
+# scratch: screenshots, capture bitmaps, one-off patch scripts
+_analysis/*
+# ... but the generators that produce checked-in files are kept, so the headers
+# can be rebuilt from their sources
+!_analysis/make_colormaps.py
+!_analysis/make_font2.py
+
+# per-run state
+settings.ini
+*.bmp
+*.log
