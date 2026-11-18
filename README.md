@@ -22,8 +22,10 @@ automated and is saved with the project.
 
 ## Install
 
-Prebuilt binaries are not committed; build them from source (below) and they land in
-`dist/`:
+Prebuilt Windows x64 binaries are attached to the
+[latest release](https://github.com/wik-wav/mel-scope/releases/latest); it is one zip
+holding both builds plus the licence files. To build them yourself they land in `dist/`
+(see below):
 
 * **CLAP** - `dist/MelScope.clap`, a single self-contained file. Copy it into your CLAP
   plugin folder, or point the host's plugin scan at `dist/`.
