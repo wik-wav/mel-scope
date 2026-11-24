@@ -1165,8 +1165,9 @@ void Gui::drawHeader()
                      res_->group.get(), kInk, StringAlignmentNear);
             // the gradient this input is drawn with, as a strip
             const float sx = box.X + box.Width - stripW - pad * 0.5f;
+            const int strip = row == 0 ? cm : mel::referenceCmap(cm);
             for (int i = 0; i < 32; ++i) {
-                const unsigned char* cc = mel::kMaps[cm][(i * 255) / 31];
+                const unsigned char* cc = mel::kMaps[strip][(i * 255) / 31];
                 SolidBrush seg(Color((ARGB)(0xFF000000u | ((uint32_t)cc[0] << 16)
                                             | ((uint32_t)cc[1] << 8) | cc[2])));
                 g.FillRectangle(&seg, sx + stripW * (float)i / 32.0f, y + (swat - stripH) * 0.5f,

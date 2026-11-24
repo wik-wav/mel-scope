@@ -351,6 +351,11 @@ float midiNoteToHz(float note);
 // input is distinguishable from the primary one without a second colour table.
 void secondaryTraceInk(int cmap, int light, int choice, unsigned char out[3]);
 
+// The gradient the reference input is drawn with. It is never the primary's: the map whose
+// mean colour is furthest from it wins, so the two layers read as different data without
+// the user having to choose a second colormap.
+int referenceCmap(int primary);
+
 // is this colormap offered in the given theme? (dark = true/false)
 bool mapFitsTheme(int cmap, bool darkTheme);
 

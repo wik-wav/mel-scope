@@ -1608,6 +1608,35 @@ float midiNoteToHz(float note) { return 440.0f * std::pow(2.0f, (note - 69.0f) /
 
 // Rotating the peak ink's hue gives a second ink that stays in the same "ink on paper"
 // register as the first, while never colliding with it.
+
+int referenceCmap(int primary)
+{
+    if (primary < 0 || primary >= kNumMaps) primary = 0;
+    // compare the mean colour of each ramp against the primary's mean
+    double pr = 0, pg = 0, pb = 0;
+    for (int i = 0; i < 256; ++i) {
+        pr += kMaps[primary][i][0];
+        pg += kMaps[primary][i][1];
+        pb += kMaps[primary][i][2];
+    }
+    pr /= 256.0; pg /= 256.0; pb /= 256.0;
+    int best = primary == 0 ? 1 : 0;
+    double bestD = -1.0;
+    for (int m = 0; m < kNumMaps; ++m) {
+        if (m == primary) continue;
+        double r = 0, g = 0, b = 0;
+        for (int i = 0; i < 256; ++i) {
+            r += kMaps[m][i][0];
+            g += kMaps[m][i][1];
+            b += kMaps[m][i][2];
+        }
+        r /= 256.0; g /= 256.0; b /= 256.0;
+        const double d = (r - pr) * (r - pr) + (g - pg) * (g - pg) + (b - pb) * (b - pb);
+        if (d > bestD) { bestD = d; best = m; }
+    }
+    return best;
+}
+
 void secondaryTraceInk(int cmap, int light, int choice, unsigned char out[3])
 {
     // fixed choices are mid-lightness so they read on a white and a black canvas alike
@@ -1621,6 +1650,13 @@ void secondaryTraceInk(int cmap, int light, int choice, unsigned char out[3])
     }
     if (cmap < 0 || cmap >= kNumMaps) cmap = 0;
     unsigned char r = kMapLine[cmap][0], g = kMapLine[cmap][1], b = kMapLine[cmap][2];
+    if (choice == 0) { // auto: the reference gradient's own ink, a different ramp entirely
+        const int rm = referenceCmap(cmap);
+        out[0] = kMapLine[rm][0];
+        out[1] = kMapLine[rm][1];
+        out[2] = kMapLine[rm][2];
+        return;
+    }
     const float rf = (float)r / 255.0f, gf = (float)g / 255.0f, bf = (float)b / 255.0f;
     const float mx = std::max(rf, std::max(gf, bf));
     const float mn = std::min(rf, std::min(gf, bf));
