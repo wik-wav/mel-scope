@@ -1570,8 +1570,11 @@ static void compositeReference(uint32_t* flat, int width, int height, const unsi
         rv.refWash = 0.0f;
         rv.notes = nullptr;
         rv.noteCount = 0;
+        rv.glow = 0.0f;  // extra passes on a background layer only add noise
         renderSpectrum(refImg.data(), width, height, (size_t)width, rf, bank, rv);
-        const uint32_t rbg = refImg[0];
+        const int rc = referenceCmap(vp.cmap);
+        const uint32_t rbg = 0xFF000000u | ((uint32_t)kMaps[rc][0][0] << 16)
+                             | ((uint32_t)kMaps[rc][0][1] << 8) | (uint32_t)kMaps[rc][0][2];
         const float washA = clampf(vp.refWash, 0.0f, 1.0f);
         for (size_t i = 0; i < npix; ++i) {
             if (refImg[i] == rbg) continue;

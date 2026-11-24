@@ -300,9 +300,6 @@ void App::applyAnalysis()
 
     // While frozen the image belongs to the user: a structural change would rebuild
     // the mel bank and throw it away, so it is deferred until they unfreeze.
-    if (frozen() && haveApplied_) return;
-    // While frozen the image belongs to the user: a structural change would rebuild
-    // the mel bank and throw it away, so it is deferred until they unfreeze.
     if (frozen()) return;
     if (!haveApplied_ || !c.sameAnalysis(applied_)) {
         applied_ = c;
@@ -929,8 +926,12 @@ clap_process_status pluginProcess(const clap_plugin_t* p, const clap_process_t* 
         }
     }
 
+    // While frozen neither engine takes audio. Feeding one and not the other leaves their
+    // timelines apart, so the reference drifts out of sync as soon as freeze is released.
+    const bool takeAudio = !pl->app.frozen();
+
     // the reference input goes to its own engine
-    if (process->audio_inputs_count > 1) {
+    if (takeAudio && process->audio_inputs_count > 1) {
         const clap_audio_buffer_t* ref = &process->audio_inputs[1];
         if (ref->data32 && ref->channel_count > 0 && ref->channel_count <= 8) {
             const float* rch[8];
@@ -940,7 +941,7 @@ clap_process_status pluginProcess(const clap_plugin_t* p, const clap_process_t* 
             if (rn > 0) pl->app.engineRef.pushAudio(rch, (int)rn, (int)frames);
         }
     }
-    if (in && in->data32 && in->channel_count > 0 && in->channel_count <= 8) {
+    if (takeAudio && in && in->data32 && in->channel_count > 0 && in->channel_count <= 8) {
         const float* chans[8];
         uint32_t n = 0;
         for (uint32_t c = 0; c < in->channel_count; ++c) {
