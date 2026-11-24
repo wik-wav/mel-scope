@@ -1048,6 +1048,10 @@ void addGuideLines(uint32_t* dst, int width, int height, size_t stride, const in
 // Traced-peak ("harmonics") renderer: spectral peaks refined to sub-bin accuracy,
 // splatted onto a pitch axis over a dimmed mel image. Constants mirror the
 // reference tool in _pitch-curve-review/curve_core.py.
+static void compositeReference(uint32_t* flat, int width, int height,
+                               const unsigned char* coverA, const MelBank& bank,
+                               const ViewParams& vp);
+
 static void renderTraces(uint32_t* dst, int width, int height, size_t stride, const FrameStore& frames,
                          const MelBank& bank, const ViewParams& vp)
 {
@@ -1296,6 +1300,8 @@ const float kInkGamma = 1.35f;   // <1 flattens, >1 separates the quiet partials
     for (int y = 0; y < height; ++y)
         std::memcpy(dst + (size_t)y * stride, &flat[(size_t)y * (size_t)width],
                     sizeof(uint32_t) * (size_t)width);
+    // the reference input, over the primary one
+    compositeReference(flat.data(), width, height, cover.data(), bank, vp);
 }
 
 void renderSpectrogram(uint32_t* dst, int width, int height, size_t stride, const FrameStore& frames,
@@ -1352,6 +1358,93 @@ FrequencyRange zoomFrequencyRange(float fmin, float fmax, int axis, float pointe
     out.fmax = fromAxis(hi);
     if (!(out.fmax > out.fmin)) return FrequencyRange{ fmin, fmax };
     return out;
+}
+
+
+// ---------------------------------------------------------------- reference input
+// Input B gets its own pass: it has its own frames and timeline, so the column mapping
+// is computed from B's own store. Traces only - a wash for both would turn the picture
+// to mud - and where both inputs carry a partial the pixel takes the mix of the two
+// inks, so overlap reads as a third colour instead of one source covering the other.
+static void compositeReference(uint32_t* flat, int width, int height, const unsigned char* coverA,
+                               const MelBank& bank, const ViewParams& vp)
+{
+    if (!vp.refFrames || vp.refFrames->count <= 1 || width < 4 || height < 4) return;
+    if (vp.refStrength <= 0.01f) return;
+    const FrameStore& rf = *vp.refFrames;
+
+    unsigned char inkSec[3];
+    secondaryTraceInk(vp.cmap, vp.light, inkSec);
+    const int cm = (vp.cmap < 0 || vp.cmap >= kNumMaps) ? 0 : vp.cmap;
+    const unsigned char* inkPri = kMapLine[cm];
+
+    const size_t npix = (size_t)width * (size_t)height;
+    static thread_local std::vector<unsigned char> coverB;
+    coverB.assign(npix, 0);
+
+    static thread_local std::vector<int> stepOfRow;
+    stepOfRow.resize((size_t)height);
+    for (int y = 0; y < height; ++y) {
+        const float hz = frequencyAtY((float)y, (float)height, bank, vp.axis, vp.fmin, vp.fmax);
+        const float yUp = yForFrequency(hz * 1.05946309f, (float)height, bank, vp.axis, vp.fmin, vp.fmax);
+        const float px = std::fabs((float)y - yUp);
+        stepOfRow[(size_t)y] = std::max(1, (int)std::lround(px / 12.0f));
+    }
+
+    const float span = std::max(0.05f, vp.span);
+    const float lineRange = std::max(1.0f, vp.lineRange);
+    for (int x = 0; x < width; ++x) {
+        const double tq = vp.now - (double)span * (double)(width - 1 - x) / (double)(width - 1);
+        if (tq < rf.timeAt(0)) continue;
+        const int fi = rf.lowerBound(tq);
+        const int np = rf.peakCountAt(fi);
+        if (np <= 0) continue;
+        const Peak* pk = rf.peaksAt(fi);
+        for (int i = 0; i < np; ++i) {
+            if (pk[i].hz <= 0.0f) continue;
+            const int yc = (int)std::lround(
+                yForFrequency(pk[i].hz, (float)height, bank, vp.axis, vp.fmin, vp.fmax));
+            if (yc < -8 || yc > height + 8) continue;
+            const int step = stepOfRow[(size_t)std::max(0, std::min(height - 1, yc))];
+            const float tilt = vp.tilt * std::log2(std::max(1.0f, pk[i].hz) / 1000.0f);
+            float n = (pk[i].db + tilt - (vp.ceilDb - lineRange)) / lineRange;
+            if (!(n > 0.0f)) continue;
+            n = std::min(1.0f, std::pow(n, 1.35f) * 1.3f);
+            for (int dd = -2 * step; dd <= 2 * step; ++dd) {
+                const int y = yc + dd;
+                if (y < 0 || y >= height) continue;
+                const int ad = std::abs(dd);
+                const float w = ad == 0 ? 1.0f : (ad <= step ? 0.75f : 0.28f);
+                const float v = n * w * (0.72f + 0.28f * n);
+                unsigned char& cell = coverB[(size_t)y * (size_t)width + (size_t)x];
+                const unsigned char iv = (unsigned char)(std::min(1.0f, v) * 255.0f);
+                if (iv > cell) cell = iv;
+            }
+        }
+    }
+
+    const float strength = clampf(vp.refStrength, 0.1f, 1.0f);
+    for (size_t i = 0; i < npix; ++i) {
+        const unsigned b = coverB[i];
+        if (!b) continue;
+        const unsigned a = coverA ? coverA[i] : 0u;
+        const int r0 = (int)((flat[i] >> 16) & 0xFF);
+        const int g0 = (int)((flat[i] >> 8) & 0xFF);
+        const int b0 = (int)(flat[i] & 0xFF);
+        int tr = inkSec[0], tg = inkSec[1], tb = inkSec[2];
+        if (a) { // both inputs here: the average of the two inks
+            tr = (inkPri[0] + inkSec[0]) / 2;
+            tg = (inkPri[1] + inkSec[1]) / 2;
+            tb = (inkPri[2] + inkSec[2]) / 2;
+        }
+        const unsigned alpha = (unsigned)((float)std::max(a, b) * strength);
+        const int r = r0 + ((tr - r0) * (int)alpha) / 255;
+        const int g = g0 + ((tg - g0) * (int)alpha) / 255;
+        const int bb = b0 + ((tb - b0) * (int)alpha) / 255;
+        flat[i] = 0xFF000000u | ((uint32_t)std::max(0, std::min(255, r)) << 16)
+                  | ((uint32_t)std::max(0, std::min(255, g)) << 8)
+                  | (uint32_t)std::max(0, std::min(255, bb));
+    }
 }
 
 // ---------------------------------------------------------------- MIDI notes
