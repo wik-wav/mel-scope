@@ -105,6 +105,10 @@ std::vector<ParamDef> makeParamDefs()
           "flips the bits, which is very distinctive and can invert an overlapping line; "
           "Screen lightens",
           0, 3, 3, true, false, "", { "Mix", "XOR", "Screen", "Third hue" } });
+    add({ "legend", "Legend", "View",
+          "Draw a key over the plot: each input's ink and the gradient it is drawn with, so "
+          "the colours on screen can be read without opening anything",
+          0, 1, 0, true, false, "", { "Off", "On" } });
 
     // choices for the colormap come from the generated table
     ParamDef& cmap = d[pCmap];
@@ -137,7 +141,7 @@ bool paramTableIsConsistent()
         { "grain", pGrain },       { "smooth", pSmooth },   { "keys", pKeyLines },
         { "freeze", pFreeze },     { "ui", pUiScale },      { "line", pLineRange },
         { "notes", pNotes },     { "refon", pRefOn },       { "reflevel", pRefLevel },
-        { "refink", pRefInk },    { "refblend", pRefBlend },
+        { "refink", pRefInk },    { "refblend", pRefBlend }, { "legend", pLegend },
     };
     static_assert(sizeof(kExpect) / sizeof(kExpect[0]) == (size_t)pCount,
                   "the expected-key table must list every parameter");

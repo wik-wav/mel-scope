@@ -510,7 +510,7 @@ void Gui::layout()
         mel::pFmax,   mel::pRange,   mel::pLineRange, mel::pCeil, mel::pAutoCeil, mel::pSpan,
         mel::pMode,   mel::pTheme,   mel::pAxis,    mel::pCmap,   mel::pGamma,  mel::pTilt,
         mel::pGlow,   mel::pGrain,   mel::pSmooth,  mel::pKeyLines, mel::pFreeze, mel::pUiScale, mel::pNotes, mel::pRefOn,
-        mel::pRefLevel, mel::pRefInk, mel::pRefBlend,
+        mel::pRefLevel, mel::pRefInk, mel::pRefBlend, mel::pLegend,
     };
     static_assert(sizeof(kPanelOrder) / sizeof(kPanelOrder[0]) == (size_t)mel::pCount,
                   "the panel order must list every parameter exactly once");
@@ -1130,6 +1130,49 @@ void Gui::drawHeader()
         drawText(g, upper(frozen ? L"Frozen" : L"Freeze"),
                  RectF(fr.X + 26.0f * s, fr.Y, fr.Width - 30.0f * s, fr.Height), res_->group.get(), ink,
                  StringAlignmentCenter);
+    }
+
+
+    // ---- legend: what each ink and gradient means, over the plot so it needs no room
+    if (app_.getBool(mel::pLegend)) {
+        const float pad = 8.0f * s;
+        const float rowH = 13.0f * s;
+        const float swat = 9.0f * s;
+        const float stripW = 54.0f * s;
+        const float stripH = 5.0f * s;
+        const bool refLive = app_.getBool(mel::pRefOn) && app_.engineRef.frames().count > 1;
+        const int rows = refLive ? 2 : 1;
+        const float boxW = 150.0f * s;
+        const float boxH = pad + rowH * (float)rows + pad * 0.5f;
+        const RectF box((float)plotX_ + pad, (float)(plotY_ + plotH_) - boxH - pad * 2.0f, boxW, boxH);
+        fillRound(g, box, 4.0f * s, kSurface);
+        strokeRound(g, box, 4.0f * s, kInk);
+
+        const int cmRaw = app_.getInt(mel::pCmap);
+        const int cm = (cmRaw < 0 || cmRaw >= mel::kNumMaps) ? 0 : cmRaw;
+        const int lightCanvas = mel::kMapIsLight[cm] ? 1 : 0;
+        unsigned char secInk[3];
+        mel::secondaryTraceInk(cm, lightCanvas, app_.getInt(mel::pRefInk), secInk);
+
+        for (int row = 0; row < rows; ++row) {
+            const float y = box.Y + pad * 0.5f + rowH * (float)row;
+            const unsigned char* ink = row == 0 ? mel::kMapLine[cm] : secInk;
+            SolidBrush sw(Color((ARGB)(0xFF000000u | ((uint32_t)ink[0] << 16)
+                                       | ((uint32_t)ink[1] << 8) | ink[2])));
+            g.FillRectangle(&sw, box.X + pad * 0.5f, y, swat, swat);
+            drawText(g, upper(row == 0 ? L"Input" : L"Reference"),
+                     RectF(box.X + pad * 0.5f + swat + 6.0f * s, y - 1.0f * s, 62.0f * s, rowH),
+                     res_->group.get(), kInk, StringAlignmentNear);
+            // the gradient this input is drawn with, as a strip
+            const float sx = box.X + box.Width - stripW - pad * 0.5f;
+            for (int i = 0; i < 32; ++i) {
+                const unsigned char* cc = mel::kMaps[cm][(i * 255) / 31];
+                SolidBrush seg(Color((ARGB)(0xFF000000u | ((uint32_t)cc[0] << 16)
+                                            | ((uint32_t)cc[1] << 8) | cc[2])));
+                g.FillRectangle(&seg, sx + stripW * (float)i / 32.0f, y + (swat - stripH) * 0.5f,
+                                stripW / 32.0f + 0.6f, stripH);
+            }
+        }
     }
 
     // status line: the range in ink, then the technical detail in muted, right

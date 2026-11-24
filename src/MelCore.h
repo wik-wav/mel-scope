@@ -46,6 +46,7 @@ enum ParamIndex {
     pRefLevel,  // strength of the reference traces
     pRefInk,    // reference ink: auto (derived per map) or a fixed colour
     pRefBlend,  // how the two inks combine where both inputs have content
+    pLegend,    // draw the key over the plot
     pCount
 };
 
