@@ -64,6 +64,20 @@ int main(int argc, char** argv)
     auto* component = (IComponent*)instance;
     check(component->initialize(nullptr) == kResultOk, "component initializes");
 
+    // what buses does the plugin actually declare? this is what a host's sidechain
+    // selector is built from
+    for (int dir = 0; dir < 2; ++dir) {
+        const int n = component->getBusCount(kAudio, dir == 0 ? kInput : kOutput);
+        std::fprintf(stderr, "      %s buses: %d\n", dir == 0 ? "input" : "output", n);
+        for (int b = 0; b < n; ++b) {
+            BusInfo bi{};
+            if (component->getBusInfo(kAudio, dir == 0 ? kInput : kOutput, b, bi) != kResultOk) continue;
+            std::fprintf(stderr, "        [%d] '%s' type=%d flags=%d channels=%d\n", b,
+                         (const char*)bi.name, (int)bi.busType, (int)bi.flags, (int)bi.channelCount);
+        }
+    }
+    check(component->getBusCount(kAudio, kInput) >= 2, "a second input bus exists for the sidechain");
+
     IAudioProcessor* proc = nullptr;
     check(component->queryInterface(IAudioProcessor::iid, (void**)&proc) == kResultOk && proc,
           "component is an audio processor");
