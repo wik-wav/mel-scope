@@ -403,6 +403,9 @@ tresult PLUGIN_API MelScopeVST3::initialize(FUnknown* context)
     if (r != kResultOk) return r;
 
     addAudioInput(USTRING("Input"), SpeakerArr::kStereo);
+    // the reference input: an aux bus, optional, so a host shows it as a sidechain and
+    // nothing breaks when it is not connected
+    addAudioInput(USTRING("Reference"), SpeakerArr::kStereo, BusTypes::kAux, BusInfo::kDefaultActive);
     addAudioOutput(USTRING("Output"), SpeakerArr::kStereo);
     addEventInput(USTRING("Event Input"), 16);
 
@@ -429,6 +432,7 @@ tresult PLUGIN_API MelScopeVST3::setActive(TBool state)
         // do the same or the editor draws its chrome over an empty plot.
         app_.applyAnalysis();
         app_.engine.start();
+        app_.engineRef.start();
     } else {
         app_.clearHistory();
     }
@@ -482,6 +486,19 @@ tresult PLUGIN_API MelScopeVST3::process(ProcessData& data)
             }
         }
         out.silenceFlags = (in[0] || in[1]) ? 0 : (uint64)-1; // silence: every channel
+    }
+
+    // the reference bus feeds its own engine
+    if (data.numInputs > 1) {
+        auto& rb = data.inputs[1];
+        const int rn = std::min(8, (int)rb.numChannels);
+        if (rn > 0) {
+            const float* rch[8];
+            int used = 0;
+            for (int cc = 0; cc < rn; ++cc)
+                if (rb.channelBuffers32[cc]) rch[used++] = rb.channelBuffers32[cc];
+            if (used > 0) app_.engineRef.pushAudio(rch, used, frames);
+        }
     }
 
     if (data.numInputs > 0) {

@@ -92,7 +92,7 @@ std::vector<ParamDef> makeParamDefs()
           "Analyse the second input (the sidechain bus) and draw its traces over the "
           "primary ones. Feed it from another track to compare against a reference such as "
           "a solo take",
-          0, 1, 0, true, false, "", { "Off", "On" } });
+          0, 1, 1, true, false, "", { "Off", "On" } });
     add({ "reflevel", "Reference level", "View",
           "How strongly the reference traces are drawn", 0.0f, 100.0f, 80.0f, true, false,
           " %", {} });
