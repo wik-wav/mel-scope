@@ -1413,6 +1413,47 @@ void NoteTrace::trim(double before)
 
 float midiNoteToHz(float note) { return 440.0f * std::pow(2.0f, (note - 69.0f) / 12.0f); }
 
+// Rotating the peak ink's hue gives a second ink that stays in the same "ink on paper"
+// register as the first, while never colliding with it.
+void secondaryTraceInk(int cmap, int light, unsigned char out[3])
+{
+    if (cmap < 0 || cmap >= kNumMaps) cmap = 0;
+    unsigned char r = kMapLine[cmap][0], g = kMapLine[cmap][1], b = kMapLine[cmap][2];
+    const float rf = (float)r / 255.0f, gf = (float)g / 255.0f, bf = (float)b / 255.0f;
+    const float mx = std::max(rf, std::max(gf, bf));
+    const float mn = std::min(rf, std::min(gf, bf));
+    float hue = 0.0f;
+    float sat = mx > 0.0f ? (mx - mn) / mx : 0.0f;
+    if (mx > mn) {
+        if (mx == rf) hue = (gf - bf) / (mx - mn);
+        else if (mx == gf) hue = 2.0f + (bf - rf) / (mx - mn);
+        else hue = 4.0f + (rf - gf) / (mx - mn);
+        hue /= 6.0f;
+        if (hue < 0.0f) hue += 1.0f;
+    }
+    // a third of the wheel away, and a little lighter on a dark canvas so it reads
+    hue = std::fmod(hue + 0.42f, 1.0f);
+    if (sat < 0.12f) sat = 0.45f; // achromatic inks still need to be told apart
+    const float val = light ? 0.46f : 0.92f;
+    const float hh = hue * 6.0f;
+    const int i = (int)hh;
+    const float f = hh - (float)i;
+    const float p = val * (1.0f - sat), q = val * (1.0f - sat * f), t = val * (1.0f - sat * (1.0f - f));
+    float rr = 0, gg = 0, bb = 0;
+    switch (i % 6) {
+    case 0: rr = val; gg = t; bb = p; break;
+    case 1: rr = q; gg = val; bb = p; break;
+    case 2: rr = p; gg = val; bb = t; break;
+    case 3: rr = p; gg = q; bb = val; break;
+    case 4: rr = t; gg = p; bb = val; break;
+    default: rr = val; gg = p; bb = q; break;
+    }
+    out[0] = (unsigned char)std::lround(clampf(rr, 0.0f, 1.0f) * 255.0f);
+    out[1] = (unsigned char)std::lround(clampf(gg, 0.0f, 1.0f) * 255.0f);
+    out[2] = (unsigned char)std::lround(clampf(bb, 0.0f, 1.0f) * 255.0f);
+}
+
+
 // Notes are drawn *behind* the image: a flat band per note at its pitch, mixed in after
 // the wash (and after the glow, so it stays crisp) and before the peak traces. The mix
 // is strongest where the spectrum is dark, so the notes read in the gaps but never

@@ -297,6 +297,10 @@ struct ViewParams {
     float span = 4.0f;  // seconds visible across the width
     double now = 0.0;   // time at the right edge
     float fmin = 30.0f, fmax = 16000.0f;
+    // Optional reference input, analysed separately and overlaid as its own traces.
+    // refFrames == nullptr means the feature is off for this frame.
+    const FrameStore* refFrames = nullptr;
+    float refStrength = 0.85f;
     // played notes, blended into the image behind the spectrum; noteLevel 0 disables
     const MidiNote* notes = nullptr;
     int noteCount = 0;
@@ -335,6 +339,10 @@ float yForFrequency(float hz, float height, const MelBank& bank, int axis, float
 
 // Equal-tempered pitch to Hz (69 = A4 = 440 Hz).
 float midiNoteToHz(float note);
+
+// Secondary trace ink for a map: the map's own peak ink rotated in hue, so the reference
+// input is distinguishable from the primary one without a second colour table.
+void secondaryTraceInk(int cmap, int light, unsigned char out[3]);
 
 // is this colormap offered in the given theme? (dark = true/false)
 bool mapFitsTheme(int cmap, bool darkTheme);
