@@ -100,6 +100,11 @@ std::vector<ParamDef> makeParamDefs()
           "Colour of the reference traces. Auto derives it from the current colormap so it "
           "never collides with the primary ink; the fixed choices read on both themes",
           0, 4, 0, true, false, "", { "Auto", "Cyan", "Amber", "Magenta", "Lime" } });
+    add({ "refblend", "Overlap", "View",
+          "How the two inks combine where both inputs have content. Mix averages them; XOR "
+          "flips the bits, which is very distinctive and can invert an overlapping line; "
+          "Screen lightens",
+          0, 2, 0, true, false, "", { "Mix", "XOR", "Screen" } });
 
     // choices for the colormap come from the generated table
     ParamDef& cmap = d[pCmap];
@@ -132,7 +137,7 @@ bool paramTableIsConsistent()
         { "grain", pGrain },       { "smooth", pSmooth },   { "keys", pKeyLines },
         { "freeze", pFreeze },     { "ui", pUiScale },      { "line", pLineRange },
         { "notes", pNotes },     { "refon", pRefOn },       { "reflevel", pRefLevel },
-        { "refink", pRefInk },
+        { "refink", pRefInk },    { "refblend", pRefBlend },
     };
     static_assert(sizeof(kExpect) / sizeof(kExpect[0]) == (size_t)pCount,
                   "the expected-key table must list every parameter");
@@ -1446,10 +1451,24 @@ static void compositeReference(uint32_t* flat, int width, int height, const unsi
         const int g0 = (int)((flat[i] >> 8) & 0xFF);
         const int b0 = (int)(flat[i] & 0xFF);
         int tr = inkSec[0], tg = inkSec[1], tb = inkSec[2];
-        if (a) { // both inputs here: the average of the two inks
-            tr = (inkPri[0] + inkSec[0]) / 2;
-            tg = (inkPri[1] + inkSec[1]) / 2;
-            tb = (inkPri[2] + inkSec[2]) / 2;
+        if (a) { // both inputs here: the overlap rule decides the colour
+            switch (vp.refBlend) {
+            case 1: // xor
+                tr = inkPri[0] ^ inkSec[0];
+                tg = inkPri[1] ^ inkSec[1];
+                tb = inkPri[2] ^ inkSec[2];
+                break;
+            case 2: // screen
+                tr = 255 - (255 - inkPri[0]) * (255 - inkSec[0]) / 255;
+                tg = 255 - (255 - inkPri[1]) * (255 - inkSec[1]) / 255;
+                tb = 255 - (255 - inkPri[2]) * (255 - inkSec[2]) / 255;
+                break;
+            default: // mix
+                tr = (inkPri[0] + inkSec[0]) / 2;
+                tg = (inkPri[1] + inkSec[1]) / 2;
+                tb = (inkPri[2] + inkSec[2]) / 2;
+                break;
+            }
         }
         const unsigned alpha = (unsigned)((float)std::max(a, b) * strength);
         const int r = r0 + ((tr - r0) * (int)alpha) / 255;

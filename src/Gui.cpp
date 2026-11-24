@@ -510,7 +510,7 @@ void Gui::layout()
         mel::pFmax,   mel::pRange,   mel::pLineRange, mel::pCeil, mel::pAutoCeil, mel::pSpan,
         mel::pMode,   mel::pTheme,   mel::pAxis,    mel::pCmap,   mel::pGamma,  mel::pTilt,
         mel::pGlow,   mel::pGrain,   mel::pSmooth,  mel::pKeyLines, mel::pFreeze, mel::pUiScale, mel::pNotes, mel::pRefOn,
-        mel::pRefLevel, mel::pRefInk,
+        mel::pRefLevel, mel::pRefInk, mel::pRefBlend,
     };
     static_assert(sizeof(kPanelOrder) / sizeof(kPanelOrder[0]) == (size_t)mel::pCount,
                   "the panel order must list every parameter exactly once");
@@ -812,6 +812,7 @@ void Gui::paint()
     vp.noteCount = (int)notes_.size();
     vp.noteLevel = app_.get(mel::pNotes) / 100.0f;
     vp.refInk = app_.getInt(mel::pRefInk);
+    vp.refBlend = app_.getInt(mel::pRefBlend);
     vp.refStrength = app_.get(mel::pRefLevel) / 100.0f;
     if (app_.getBool(mel::pRefOn)) {
         const mel::FrameStore& rf = app_.engineRef.frames();
