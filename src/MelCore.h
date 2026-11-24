@@ -306,7 +306,7 @@ struct ViewParams {
     const FrameStore* refFrames = nullptr;
     float refStrength = 0.85f;
     int refInk = 0;   // 0 auto, 1..4 fixed colours
-    int refBlend = 0; // 0 mix, 1 xor, 2 screen
+    int refBlend = 3; // 0 mix, 1 xor, 2 screen, 3 third hue
     // played notes, blended into the image behind the spectrum; noteLevel 0 disables
     const MidiNote* notes = nullptr;
     int noteCount = 0;

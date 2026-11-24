@@ -104,7 +104,7 @@ std::vector<ParamDef> makeParamDefs()
           "How the two inks combine where both inputs have content. Mix averages them; XOR "
           "flips the bits, which is very distinctive and can invert an overlapping line; "
           "Screen lightens",
-          0, 2, 0, true, false, "", { "Mix", "XOR", "Screen" } });
+          0, 3, 3, true, false, "", { "Mix", "XOR", "Screen", "Third hue" } });
 
     // choices for the colormap come from the generated table
     ParamDef& cmap = d[pCmap];
@@ -1380,6 +1380,62 @@ FrequencyRange zoomFrequencyRange(float fmin, float fmax, int axis, float pointe
 }
 
 
+
+// The overlap colour must be obviously not either source. Bit arithmetic (XOR) on two inks
+// tends to land back near one of them, so the hue is chosen instead: take the hue furthest
+// from both inks and keep it vivid, which is what "a very different colour" means on screen.
+void overlapInk(int cmap, int light, unsigned char out[3])
+{
+    const int cm = (cmap < 0 || cmap >= kNumMaps) ? 0 : cmap;
+    auto toHsv = [](const unsigned char rgb[3], float& hh, float& ss, float& vv) {
+        const float r = (float)rgb[0] / 255.0f, g = (float)rgb[1] / 255.0f, b = (float)rgb[2] / 255.0f;
+        const float mx = std::max(r, std::max(g, b)), mn = std::min(r, std::min(g, b));
+        vv = mx;
+        ss = mx > 0.0f ? (mx - mn) / mx : 0.0f;
+        hh = 0.0f;
+        if (mx > mn) {
+            if (mx == r) hh = (g - b) / (mx - mn);
+            else if (mx == g) hh = 2.0f + (b - r) / (mx - mn);
+            else hh = 4.0f + (r - g) / (mx - mn);
+            hh /= 6.0f;
+            if (hh < 0.0f) hh += 1.0f;
+        }
+    };
+    float hp, sp, vp, hs, ss, vs;
+    toHsv(kMapLine[cm], hp, sp, vp);
+    unsigned char sec[3];
+    secondaryTraceInk(cm, light, 0, sec);
+    toHsv(sec, hs, ss, vs);
+    auto dist = [](float a, float b) {
+        const float d = std::fabs(a - b);
+        return d > 0.5f ? 1.0f - d : d;
+    };
+    // candidates a third of the wheel apart, then the best of eight positions
+    float best = hp, bestScore = -1.0f;
+    for (int i = 1; i < 8; ++i) {
+        const float cand = std::fmod(hp + 0.125f * (float)i, 1.0f);
+        const float score = std::min(dist(cand, hp), dist(cand, hs));
+        if (score > bestScore) { bestScore = score; best = cand; }
+    }
+    const float sat = 0.85f, val = light ? 0.42f : 0.95f;
+    const float hh = best * 6.0f;
+    const int i = (int)hh;
+    const float f = hh - (float)i;
+    const float p = val * (1.0f - sat), q = val * (1.0f - sat * f), t = val * (1.0f - sat * (1.0f - f));
+    float r = 0, g = 0, b = 0;
+    switch (i % 6) {
+    case 0: r = val; g = t; b = p; break;
+    case 1: r = q; g = val; b = p; break;
+    case 2: r = p; g = val; b = t; break;
+    case 3: r = p; g = q; b = val; break;
+    case 4: r = t; g = p; b = val; break;
+    default: r = val; g = p; b = q; break;
+    }
+    out[0] = (unsigned char)std::lround(clampf(r, 0.0f, 1.0f) * 255.0f);
+    out[1] = (unsigned char)std::lround(clampf(g, 0.0f, 1.0f) * 255.0f);
+    out[2] = (unsigned char)std::lround(clampf(b, 0.0f, 1.0f) * 255.0f);
+}
+
 // ---------------------------------------------------------------- reference input
 // Input B gets its own pass: it has its own frames and timeline, so the column mapping
 // is computed from B's own store. Traces only - a wash for both would turn the picture
@@ -1394,6 +1450,8 @@ static void compositeReference(uint32_t* flat, int width, int height, const unsi
 
     unsigned char inkSec[3];
     secondaryTraceInk(vp.cmap, vp.light, vp.refInk, inkSec);
+    unsigned char inkOv[3];
+    overlapInk(vp.cmap, vp.light, inkOv);
     const int cm = (vp.cmap < 0 || vp.cmap >= kNumMaps) ? 0 : vp.cmap;
     const unsigned char* inkPri = kMapLine[cm];
 
@@ -1462,6 +1520,11 @@ static void compositeReference(uint32_t* flat, int width, int height, const unsi
                 tr = 255 - (255 - inkPri[0]) * (255 - inkSec[0]) / 255;
                 tg = 255 - (255 - inkPri[1]) * (255 - inkSec[1]) / 255;
                 tb = 255 - (255 - inkPri[2]) * (255 - inkSec[2]) / 255;
+                break;
+            case 3: // a hue chosen to be far from both inks
+                tr = inkOv[0];
+                tg = inkOv[1];
+                tb = inkOv[2];
                 break;
             default: // mix
                 tr = (inkPri[0] + inkSec[0]) / 2;
