@@ -405,7 +405,7 @@ tresult PLUGIN_API MelScopeVST3::initialize(FUnknown* context)
     addAudioInput(STR16("Input"), SpeakerArr::kStereo);
     // the reference input: an aux bus, optional, so a host shows it as a sidechain and
     // nothing breaks when it is not connected
-    addAudioInput(STR16("Reference"), SpeakerArr::kStereo, BusTypes::kAux, 0);
+    addAudioInput(STR16("Reference"), SpeakerArr::kStereo, BusTypes::kAux, BusInfo::kDefaultActive);
     addAudioOutput(STR16("Output"), SpeakerArr::kStereo);
     addEventInput(USTRING("Event Input"), 16);
 
