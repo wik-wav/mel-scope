@@ -1310,11 +1310,12 @@ const float kInkGamma = 1.35f;   // <1 flattens, >1 separates the quiet partials
         flat[i] = 0xFF000000u | ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
     }
 
+    // the reference input goes over the primary one, BEFORE the image is copied out
+    compositeReference(flat.data(), width, height, cover.data(), bank, vp);
+
     for (int y = 0; y < height; ++y)
         std::memcpy(dst + (size_t)y * stride, &flat[(size_t)y * (size_t)width],
                     sizeof(uint32_t) * (size_t)width);
-    // the reference input, over the primary one
-    compositeReference(flat.data(), width, height, cover.data(), bank, vp);
 }
 
 void renderSpectrogram(uint32_t* dst, int width, int height, size_t stride, const FrameStore& frames,
