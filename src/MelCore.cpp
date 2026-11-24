@@ -109,6 +109,14 @@ std::vector<ParamDef> makeParamDefs()
           "Draw a key over the plot: each input's ink and the gradient it is drawn with, so "
           "the colours on screen can be read without opening anything",
           0, 1, 0, true, false, "", { "Off", "On" } });
+    add({ "refwash", "Reference spectrum", "View",
+          "Draw the reference input as a spectrum, not only as traced peaks. 0 leaves just "
+          "the traces",
+          0.0f, 100.0f, 60.0f, true, false, " %", {} });
+    add({ "refrange", "Reference range", "View",
+          "Dynamic range of the reference spectrum, independent of the primary's, so a quiet "
+          "reference can be shown without changing the other input",
+          10.0f, 120.0f, 60.0f, true, false, " dB", {} });
 
     // choices for the colormap come from the generated table
     ParamDef& cmap = d[pCmap];
@@ -141,7 +149,7 @@ bool paramTableIsConsistent()
         { "grain", pGrain },       { "smooth", pSmooth },   { "keys", pKeyLines },
         { "freeze", pFreeze },     { "ui", pUiScale },      { "line", pLineRange },
         { "notes", pNotes },     { "refon", pRefOn },       { "reflevel", pRefLevel },
-        { "refink", pRefInk },    { "refblend", pRefBlend }, { "legend", pLegend },
+        { "refink", pRefInk },    { "refblend", pRefBlend }, { "legend", pLegend }, { "refwash", pRefWash }, { "refrange", pRefRange },
     };
     static_assert(sizeof(kExpect) / sizeof(kExpect[0]) == (size_t)pCount,
                   "the expected-key table must list every parameter");
@@ -1545,6 +1553,43 @@ static void compositeReference(uint32_t* flat, int width, int height, const unsi
                 const unsigned char iv = (unsigned char)(std::min(1.0f, v) * 255.0f);
                 if (iv > cell) cell = iv;
             }
+        }
+    }
+
+    // ---- the reference spectrum, drawn with its own gradient and its own range, then the
+    // traces go over it. Reusing renderSpectrum keeps the axis mapping identical to the
+    // primary's, so the two washes line up.
+    if (vp.refWash > 0.01f) {
+        static thread_local std::vector<uint32_t> refImg;
+        refImg.assign(npix, 0u);
+        ViewParams rv = vp;
+        rv.cmap = referenceCmap(vp.cmap);
+        rv.mode = 0;            // plain spectrum for the reference
+        rv.floorDb = rv.ceilDb - vp.refRange; // the reference's own range
+        rv.refFrames = nullptr; // no recursion
+        rv.refWash = 0.0f;
+        rv.notes = nullptr;
+        rv.noteCount = 0;
+        renderSpectrum(refImg.data(), width, height, (size_t)width, rf, bank, rv);
+        const uint32_t rbg = refImg[0];
+        const float washA = clampf(vp.refWash, 0.0f, 1.0f);
+        for (size_t i = 0; i < npix; ++i) {
+            if (refImg[i] == rbg) continue;
+            const int rr = (int)((refImg[i] >> 16) & 0xFF), rg = (int)((refImg[i] >> 8) & 0xFF),
+                      rb = (int)(refImg[i] & 0xFF);
+            const int pr = (int)((flat[i] >> 16) & 0xFF), pg = (int)((flat[i] >> 8) & 0xFF),
+                      pb = (int)(flat[i] & 0xFF);
+            // strength follows how far the reference pixel is from its own canvas
+            const int dr = rr - (int)((rbg >> 16) & 0xFF), dg = rg - (int)((rbg >> 8) & 0xFF),
+                      db = rb - (int)(rbg & 0xFF);
+            const float d = std::sqrt((float)(dr * dr + dg * dg + db * db)) / 441.0f;
+            const float a = washA * std::min(1.0f, d);
+            const int nr = pr + (int)((float)(rr - pr) * a);
+            const int ng = pg + (int)((float)(rg - pg) * a);
+            const int nb = pb + (int)((float)(rb - pb) * a);
+            flat[i] = 0xFF000000u | ((uint32_t)std::max(0, std::min(255, nr)) << 16)
+                      | ((uint32_t)std::max(0, std::min(255, ng)) << 8)
+                      | (uint32_t)std::max(0, std::min(255, nb));
         }
     }
 

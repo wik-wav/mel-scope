@@ -47,6 +47,8 @@ enum ParamIndex {
     pRefInk,    // reference ink: auto (derived per map) or a fixed colour
     pRefBlend,  // how the two inks combine where both inputs have content
     pLegend,    // draw the key over the plot
+    pRefWash,   // reference spectrum level (0 = traces only)
+    pRefRange,  // reference spectrum dB range, independent of the primary's
     pCount
 };
 
@@ -306,6 +308,8 @@ struct ViewParams {
     // refFrames == nullptr means the feature is off for this frame.
     const FrameStore* refFrames = nullptr;
     float refStrength = 0.85f;
+    float refWash = 0.6f;   // reference spectrum strength, 0 = traces only
+    float refRange = 60.0f; // the reference's own dB range
     int refInk = 0;   // 0 auto, 1..4 fixed colours
     int refBlend = 4; // 0 mix, 1 xor, 2 screen, 3 third hue, 4 invert hue
     // played notes, blended into the image behind the spectrum; noteLevel 0 disables
