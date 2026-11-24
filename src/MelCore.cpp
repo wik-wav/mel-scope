@@ -104,7 +104,7 @@ std::vector<ParamDef> makeParamDefs()
           "How the two inks combine where both inputs have content. Mix averages them; XOR "
           "flips the bits, which is very distinctive and can invert an overlapping line; "
           "Screen lightens",
-          0, 3, 3, true, false, "", { "Mix", "XOR", "Screen", "Third hue" } });
+          0, 4, 4, true, false, "", { "Mix", "XOR", "Screen", "Third hue", "Invert hue" } });
     add({ "legend", "Legend", "View",
           "Draw a key over the plot: each input's ink and the gradient it is drawn with, so "
           "the colours on screen can be read without opening anything",
@@ -1385,6 +1385,44 @@ FrequencyRange zoomFrequencyRange(float fmin, float fmax, int axis, float pointe
 
 
 
+
+// Overlap by hue inversion: the two inks are averaged, the hue is flipped to the far side of
+// the wheel and the result kept vivid, so where both inputs are present the colour is
+// unmistakably a third thing rather than a shade of either.
+void invertHueInk(const unsigned char a[3], const unsigned char b[3], int light, unsigned char out[3])
+{
+    const float r = (float)((a[0] + b[0]) / 2) / 255.0f;
+    const float g = (float)((a[1] + b[1]) / 2) / 255.0f;
+    const float bl = (float)((a[2] + b[2]) / 2) / 255.0f;
+    const float mx = std::max(r, std::max(g, bl)), mn = std::min(r, std::min(g, bl));
+    float hh = 0.0f;
+    if (mx > mn) {
+        if (mx == r) hh = (g - bl) / (mx - mn);
+        else if (mx == g) hh = 2.0f + (bl - r) / (mx - mn);
+        else hh = 4.0f + (r - g) / (mx - mn);
+        hh /= 6.0f;
+        if (hh < 0.0f) hh += 1.0f;
+    }
+    hh = std::fmod(hh + 0.5f, 1.0f); // the inversion
+    const float sat = 0.92f, val = light ? 0.44f : 0.96f;
+    const float h6 = hh * 6.0f;
+    const int i = (int)h6;
+    const float f = h6 - (float)i;
+    const float p = val * (1.0f - sat), q = val * (1.0f - sat * f), t = val * (1.0f - sat * (1.0f - f));
+    float rr = 0, gg = 0, bb = 0;
+    switch (i % 6) {
+    case 0: rr = val; gg = t; bb = p; break;
+    case 1: rr = q; gg = val; bb = p; break;
+    case 2: rr = p; gg = val; bb = t; break;
+    case 3: rr = p; gg = q; bb = val; break;
+    case 4: rr = t; gg = p; bb = val; break;
+    default: rr = val; gg = p; bb = q; break;
+    }
+    out[0] = (unsigned char)std::lround(clampf(rr, 0.0f, 1.0f) * 255.0f);
+    out[1] = (unsigned char)std::lround(clampf(gg, 0.0f, 1.0f) * 255.0f);
+    out[2] = (unsigned char)std::lround(clampf(bb, 0.0f, 1.0f) * 255.0f);
+}
+
 // The overlap colour must be obviously not either source. Bit arithmetic (XOR) on two inks
 // tends to land back near one of them, so the hue is chosen instead: take the hue furthest
 // from both inks and keep it vivid, which is what "a very different colour" means on screen.
@@ -1456,6 +1494,12 @@ static void compositeReference(uint32_t* flat, int width, int height, const unsi
     secondaryTraceInk(vp.cmap, vp.light, vp.refInk, inkSec);
     unsigned char inkOv[3];
     overlapInk(vp.cmap, vp.light, inkOv);
+    unsigned char inkInv[3];
+    {
+        const int c2 = (vp.cmap < 0 || vp.cmap >= kNumMaps) ? 0 : vp.cmap;
+        const unsigned char priInk[3] = { kMapLine[c2][0], kMapLine[c2][1], kMapLine[c2][2] };
+        invertHueInk(priInk, inkSec, vp.light, inkInv);
+    }
     const int cm = (vp.cmap < 0 || vp.cmap >= kNumMaps) ? 0 : vp.cmap;
     const unsigned char* inkPri = kMapLine[cm];
 
@@ -1529,6 +1573,11 @@ static void compositeReference(uint32_t* flat, int width, int height, const unsi
                 tr = inkOv[0];
                 tg = inkOv[1];
                 tb = inkOv[2];
+                break;
+            case 4: // hue inverted at the overlap
+                tr = inkInv[0];
+                tg = inkInv[1];
+                tb = inkInv[2];
                 break;
             default: // mix
                 tr = (inkPri[0] + inkSec[0]) / 2;

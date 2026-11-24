@@ -416,7 +416,7 @@ int main(int argc, char** argv)
         if (doRef) {
             // a distinct partial for the reference bus
             for (uint32_t i = 0; i < block; ++i) {
-                const double ph = 2.0 * 3.14159265358979 * 330.0 * (double)(refPhase + i) / (double)sr;
+                const double ph = 2.0 * 3.14159265358979 * 220.0 * (double)(refPhase + i) / (double)sr;
                 refL[i] = refR[i] = (float)(0.5 * std::sin(ph));
             }
             refPhase += block;
