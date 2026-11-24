@@ -507,10 +507,12 @@ void Gui::layout()
     // of everything after it and reinterpret saved state.
     static const int kPanelOrder[] = {
         mel::pFft,    mel::pOverlap, mel::pBands,   mel::pWindow, mel::pChannel, mel::pFmin,
-        mel::pFmax,   mel::pRange,   mel::pLineRange, mel::pCeil, mel::pAutoCeil, mel::pSpan,
+        mel::pFmax,   mel::pRange,   mel::pLineRange, mel::pCeil, mel::pAutoCeil,
+        mel::pRefOn,  mel::pRefLevel, mel::pRefWash, mel::pRefRange, mel::pRefInk, mel::pRefBlend,
+        mel::pSpan,
         mel::pMode,   mel::pTheme,   mel::pAxis,    mel::pCmap,   mel::pGamma,  mel::pTilt,
-        mel::pGlow,   mel::pGrain,   mel::pSmooth,  mel::pKeyLines, mel::pFreeze, mel::pUiScale, mel::pNotes, mel::pRefOn,
-        mel::pRefLevel, mel::pRefInk, mel::pRefBlend, mel::pLegend, mel::pRefWash, mel::pRefRange,
+        mel::pGlow,   mel::pGrain,   mel::pSmooth,  mel::pKeyLines, mel::pFreeze, mel::pUiScale, mel::pNotes,
+        mel::pLegend,
     };
     static_assert(sizeof(kPanelOrder) / sizeof(kPanelOrder[0]) == (size_t)mel::pCount,
                   "the panel order must list every parameter exactly once");

@@ -88,19 +88,19 @@ std::vector<ParamDef> makeParamDefs()
           "off. Each note is a band one semitone tall at its own pitch, so it lines up with "
           "what the analyser shows",
           0.0f, 100.0f, 55.0f, true, false, " %", {} });
-    add({ "refon", "Reference input", "View",
+    add({ "refon", "Reference input", "Reference",
           "Analyse the second input (the sidechain bus) and draw its traces over the "
           "primary ones. Feed it from another track to compare against a reference such as "
           "a solo take",
           0, 1, 1, true, false, "", { "Off", "On" } });
-    add({ "reflevel", "Reference level", "View",
+    add({ "reflevel", "Reference level", "Reference",
           "How strongly the reference traces are drawn", 0.0f, 100.0f, 80.0f, true, false,
           " %", {} });
-    add({ "refink", "Reference colour", "View",
+    add({ "refink", "Reference colour", "Reference",
           "Colour of the reference traces. Auto derives it from the current colormap so it "
           "never collides with the primary ink; the fixed choices read on both themes",
           0, 4, 0, true, false, "", { "Auto", "Cyan", "Amber", "Magenta", "Lime" } });
-    add({ "refblend", "Overlap", "View",
+    add({ "refblend", "Overlap", "Reference",
           "How the two inks combine where both inputs have content. Mix averages them; XOR "
           "flips the bits, which is very distinctive and can invert an overlapping line; "
           "Screen lightens",
@@ -109,11 +109,11 @@ std::vector<ParamDef> makeParamDefs()
           "Draw a key over the plot: each input's ink and the gradient it is drawn with, so "
           "the colours on screen can be read without opening anything",
           0, 1, 0, true, false, "", { "Off", "On" } });
-    add({ "refwash", "Reference spectrum", "View",
+    add({ "refwash", "Reference spectrum", "Reference",
           "Draw the reference input as a spectrum, not only as traced peaks. 0 leaves just "
           "the traces",
           0.0f, 100.0f, 60.0f, true, false, " %", {} });
-    add({ "refrange", "Reference range", "View",
+    add({ "refrange", "Reference range", "Reference",
           "Dynamic range of the reference spectrum, independent of the primary's, so a quiet "
           "reference can be shown without changing the other input",
           10.0f, 120.0f, 60.0f, true, false, " dB", {} });
