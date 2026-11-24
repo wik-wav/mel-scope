@@ -204,6 +204,7 @@ int main(int argc, char** argv)
     bool doEdit = false;
     bool doHover = false;
     bool doParamProbe = false;
+    bool doRef = false;
     bool doZoomRange = false;
     for (int i = 2; i < argc; ++i) {
         if (std::strcmp(argv[i], "--panel") == 0) {
@@ -213,6 +214,10 @@ int main(int argc, char** argv)
         if (std::strcmp(argv[i], "--zoomfrange") == 0) {
             doZoomRange = true;
             openPanel = true; // these probes live inside the openPanel block
+            continue;
+        }
+        if (std::strcmp(argv[i], "--ref") == 0) {
+            doRef = true;
             continue;
         }
         if (std::strcmp(argv[i], "--paramprobe") == 0) {
@@ -379,19 +384,27 @@ int main(int argc, char** argv)
     std::vector<float> inL(block, 0.0f), inR(block, 0.0f), outL(block, 0.0f), outR(block, 0.0f);
     Tone tone;
     tone.sr = sr;
+    double refPhase = 0.0;
 
     clap_audio_buffer_t inBuf = {};
     clap_audio_buffer_t outBuf = {};
+    clap_audio_buffer_t refBuf = {};
+    std::vector<float> refL(block, 0.0f), refR(block, 0.0f);
     float* inPtrs[2] = { inL.data(), inR.data() };
     float* outPtrs[2] = { outL.data(), outR.data() };
+    float* refPtrs[2] = { refL.data(), refR.data() };
     inBuf.data32 = inPtrs;
     inBuf.channel_count = 2;
+    refBuf.data32 = refPtrs;
+    refBuf.channel_count = 2;
     outBuf.data32 = outPtrs;
     outBuf.channel_count = 2;
 
+    // two input buses: main and reference
+    clap_audio_buffer_t inBuses[2] = { inBuf, refBuf };
     clap_process_t proc = {};
-    proc.audio_inputs = &inBuf;
-    proc.audio_inputs_count = 1;
+    proc.audio_inputs = doRef ? inBuses : &inBuf;
+    proc.audio_inputs_count = doRef ? 2u : 1u;
     proc.audio_outputs = &outBuf;
     proc.audio_outputs_count = 1;
     proc.frames_count = block;
@@ -400,6 +413,14 @@ int main(int argc, char** argv)
     const int blocks = 400; // ~2.1 s at 48k
     for (int b = 0; b < blocks; ++b) {
         tone.fill(inL.data(), inR.data(), block);
+        if (doRef) {
+            // a distinct partial for the reference bus
+            for (uint32_t i = 0; i < block; ++i) {
+                const double ph = 2.0 * 3.14159265358979 * 330.0 * (double)(refPhase + i) / (double)sr;
+                refL[i] = refR[i] = (float)(0.5 * std::sin(ph));
+            }
+            refPhase += block;
+        }
         std::fill(outL.begin(), outL.end(), 0.0f);
         std::fill(outR.begin(), outR.end(), 0.0f);
         const int status = plugin->process(plugin, &proc);

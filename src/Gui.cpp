@@ -509,7 +509,8 @@ void Gui::layout()
         mel::pFft,    mel::pOverlap, mel::pBands,   mel::pWindow, mel::pChannel, mel::pFmin,
         mel::pFmax,   mel::pRange,   mel::pLineRange, mel::pCeil, mel::pAutoCeil, mel::pSpan,
         mel::pMode,   mel::pTheme,   mel::pAxis,    mel::pCmap,   mel::pGamma,  mel::pTilt,
-        mel::pGlow,   mel::pGrain,   mel::pSmooth,  mel::pKeyLines, mel::pFreeze, mel::pUiScale, mel::pNotes,
+        mel::pGlow,   mel::pGrain,   mel::pSmooth,  mel::pKeyLines, mel::pFreeze, mel::pUiScale, mel::pNotes, mel::pRefOn,
+        mel::pRefLevel, mel::pRefInk,
     };
     static_assert(sizeof(kPanelOrder) / sizeof(kPanelOrder[0]) == (size_t)mel::pCount,
                   "the panel order must list every parameter exactly once");
@@ -810,6 +811,12 @@ void Gui::paint()
     vp.notes = notes_.empty() ? nullptr : notes_.data();
     vp.noteCount = (int)notes_.size();
     vp.noteLevel = app_.get(mel::pNotes) / 100.0f;
+    vp.refInk = app_.getInt(mel::pRefInk);
+    vp.refStrength = app_.get(mel::pRefLevel) / 100.0f;
+    if (app_.getBool(mel::pRefOn)) {
+        const mel::FrameStore& rf = app_.engineRef.frames();
+        if (rf.count > 1) vp.refFrames = &rf;
+    }
     curAxis_ = vp.axis;
     {
         const int cm = std::max(0, std::min(mel::kNumMaps - 1, vp.cmap));

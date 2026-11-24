@@ -78,16 +78,28 @@ std::vector<ParamDef> makeParamDefs()
           "Size of the interface text and controls, in percent of the host's scale. The window "
           "opens at this size too",
           75, 200, 115, true, false, " %", {} });
-    add({ "notes", "MIDI notes", "View",
-          "How strongly notes received on the MIDI input are drawn behind the spectrum, 0 = "
-          "off. Each note is a band one semitone tall at its own pitch, so it lines up with "
-          "what the analyser shows",
-          0.0f, 100.0f, 55.0f, true, false, " %", {} });
     add({ "line", "Peak range", "Range",
           "How many dB of level the peak traces span, counted down from the ceiling. Set apart "
           "from Spectrum range: keep that wide to see the spectrum and this narrower so quiet "
           "partials still read as lighter lines",
           10.0f, 120.0f, 60.0f, true, false, " dB", {} });
+    add({ "notes", "MIDI notes", "View",
+          "How strongly notes received on the MIDI input are drawn behind the spectrum, 0 = "
+          "off. Each note is a band one semitone tall at its own pitch, so it lines up with "
+          "what the analyser shows",
+          0.0f, 100.0f, 55.0f, true, false, " %", {} });
+    add({ "refon", "Reference input", "View",
+          "Analyse the second input (the sidechain bus) and draw its traces over the "
+          "primary ones. Feed it from another track to compare against a reference such as "
+          "a solo take",
+          0, 1, 0, true, false, "", { "Off", "On" } });
+    add({ "reflevel", "Reference level", "View",
+          "How strongly the reference traces are drawn", 0.0f, 100.0f, 80.0f, true, false,
+          " %", {} });
+    add({ "refink", "Reference colour", "View",
+          "Colour of the reference traces. Auto derives it from the current colormap so it "
+          "never collides with the primary ink; the fixed choices read on both themes",
+          0, 4, 0, true, false, "", { "Auto", "Cyan", "Amber", "Magenta", "Lime" } });
 
     // choices for the colormap come from the generated table
     ParamDef& cmap = d[pCmap];
@@ -119,7 +131,8 @@ bool paramTableIsConsistent()
         { "gamma", pGamma },       { "tilt", pTilt },       { "glow", pGlow },
         { "grain", pGrain },       { "smooth", pSmooth },   { "keys", pKeyLines },
         { "freeze", pFreeze },     { "ui", pUiScale },      { "line", pLineRange },
-        { "notes", pNotes },
+        { "notes", pNotes },     { "refon", pRefOn },       { "reflevel", pRefLevel },
+        { "refink", pRefInk },
     };
     static_assert(sizeof(kExpect) / sizeof(kExpect[0]) == (size_t)pCount,
                   "the expected-key table must list every parameter");
@@ -1374,7 +1387,7 @@ static void compositeReference(uint32_t* flat, int width, int height, const unsi
     const FrameStore& rf = *vp.refFrames;
 
     unsigned char inkSec[3];
-    secondaryTraceInk(vp.cmap, vp.light, inkSec);
+    secondaryTraceInk(vp.cmap, vp.light, vp.refInk, inkSec);
     const int cm = (vp.cmap < 0 || vp.cmap >= kNumMaps) ? 0 : vp.cmap;
     const unsigned char* inkPri = kMapLine[cm];
 
@@ -1508,8 +1521,17 @@ float midiNoteToHz(float note) { return 440.0f * std::pow(2.0f, (note - 69.0f) /
 
 // Rotating the peak ink's hue gives a second ink that stays in the same "ink on paper"
 // register as the first, while never colliding with it.
-void secondaryTraceInk(int cmap, int light, unsigned char out[3])
+void secondaryTraceInk(int cmap, int light, int choice, unsigned char out[3])
 {
+    // fixed choices are mid-lightness so they read on a white and a black canvas alike
+    static const unsigned char kFixed[4][3] = { { 0, 170, 190 }, { 232, 150, 30 },
+                                                { 200, 60, 190 }, { 120, 200, 70 } };
+    if (choice >= 1 && choice <= 4) {
+        out[0] = kFixed[choice - 1][0];
+        out[1] = kFixed[choice - 1][1];
+        out[2] = kFixed[choice - 1][2];
+        return;
+    }
     if (cmap < 0 || cmap >= kNumMaps) cmap = 0;
     unsigned char r = kMapLine[cmap][0], g = kMapLine[cmap][1], b = kMapLine[cmap][2];
     const float rf = (float)r / 255.0f, gf = (float)g / 255.0f, bf = (float)b / 255.0f;

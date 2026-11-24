@@ -20,6 +20,8 @@ public:
 
     mel::Engine engine;
     mel::NoteTrace notes; // MIDI input, drawn under the spectrum
+    // The reference input is analysed by its own engine: separate frames, same config.
+    mel::Engine engineRef;
 
     float get(int pid) const { return values_[pid].load(std::memory_order_relaxed); }
     int getInt(int pid) const { return (int)(get(pid) + 0.5f); }

@@ -235,7 +235,11 @@ void App::resetAll()
     analysisDirty_.store(true, std::memory_order_relaxed);
 }
 
-void App::clearHistory() { engine.clearHistory(); }
+void App::clearHistory()
+{
+    engine.clearHistory();
+    engineRef.clearHistory();
+}
 
 void App::resetRange()
 {
@@ -252,6 +256,7 @@ void App::setSampleRate(double sr)
 {
     if (sr > 0) sampleRate_ = sr;
     engine.prepare(sampleRate_);
+    engineRef.prepare(sampleRate_);
     haveApplied_ = false;
     analysisDirty_.store(true, std::memory_order_relaxed);
 }
@@ -304,6 +309,7 @@ void App::applyAnalysis()
         haveApplied_ = true;
         engine.setInputChannel(c.channel);
         engine.setAnalysisConfig(c);
+    engineRef.setAnalysisConfig(c);
     }
 }
 
@@ -529,18 +535,34 @@ const clap_plugin_params_t kParams = {
 };
 
 // -------------------------------------------------------------- audio ports
-uint32_t portsCount(const clap_plugin_t*, bool) { return 1; }
+// Two inputs: the main one, and a reference the user can feed from another track.
+uint32_t portsCount(const clap_plugin_t*, bool isInput) { return isInput ? 2u : 1u; }
 
 bool portsGet(const clap_plugin_t*, uint32_t index, bool isInput, clap_audio_port_info_t* info)
 {
-    if (index != 0 || !info) return false;
+    if (!info) return false;
     std::memset(info, 0, sizeof(*info));
-    info->id = isInput ? 0 : 1;
-    std::snprintf(info->name, sizeof(info->name), "%s", isInput ? "Input" : "Output");
-    info->flags = CLAP_AUDIO_PORT_IS_MAIN;
     info->channel_count = 2;
     info->port_type = CLAP_PORT_STEREO;
-    info->in_place_pair = isInput ? 1 : 0;
+    info->in_place_pair = CLAP_INVALID_ID;
+    if (isInput) {
+        if (index == 0) {
+            info->id = 0;
+            std::snprintf(info->name, sizeof(info->name), "%s", "Input");
+            info->flags = CLAP_AUDIO_PORT_IS_MAIN;
+        } else if (index == 1) {
+            info->id = 1;
+            std::snprintf(info->name, sizeof(info->name), "%s", "Reference");
+            info->flags = 0;
+        } else {
+            return false;
+        }
+        return true;
+    }
+    if (index != 0) return false;
+    info->id = 2;
+    std::snprintf(info->name, sizeof(info->name), "%s", "Output");
+    info->flags = CLAP_AUDIO_PORT_IS_MAIN;
     return true;
 }
 
@@ -867,6 +889,7 @@ bool pluginActivate(const clap_plugin_t* p, double sampleRate, uint32_t, uint32_
     pl->active = true;
     pl->app.setSampleRate(sampleRate);
     pl->app.engine.start();
+    pl->app.engineRef.start();
     pl->app.applyIfNeeded();
     return true;
 }
@@ -906,6 +929,17 @@ clap_process_status pluginProcess(const clap_plugin_t* p, const clap_process_t* 
         }
     }
 
+    // the reference input goes to its own engine
+    if (process->audio_inputs_count > 1) {
+        const clap_audio_buffer_t* ref = &process->audio_inputs[1];
+        if (ref->data32 && ref->channel_count > 0 && ref->channel_count <= 8) {
+            const float* rch[8];
+            uint32_t rn = 0;
+            for (uint32_t c = 0; c < ref->channel_count; ++c)
+                if (ref->data32[c]) rch[rn++] = ref->data32[c];
+            if (rn > 0) pl->app.engineRef.pushAudio(rch, (int)rn, (int)frames);
+        }
+    }
     if (in && in->data32 && in->channel_count > 0 && in->channel_count <= 8) {
         const float* chans[8];
         uint32_t n = 0;

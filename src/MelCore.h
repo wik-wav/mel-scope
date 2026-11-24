@@ -42,6 +42,9 @@ enum ParamIndex {
     pUiScale, // appended last so existing parameter ids do not move
     pLineRange, // same rule: never insert, or saved values shift meaning
     pNotes,     // strength of the MIDI note layer (0 = off)
+    pRefOn,     // reference input enabled
+    pRefLevel,  // strength of the reference traces
+    pRefInk,    // reference ink: auto (derived per map) or a fixed colour
     pCount
 };
 
@@ -301,6 +304,7 @@ struct ViewParams {
     // refFrames == nullptr means the feature is off for this frame.
     const FrameStore* refFrames = nullptr;
     float refStrength = 0.85f;
+    int refInk = 0; // 0 auto, 1..4 fixed colours
     // played notes, blended into the image behind the spectrum; noteLevel 0 disables
     const MidiNote* notes = nullptr;
     int noteCount = 0;
@@ -342,7 +346,7 @@ float midiNoteToHz(float note);
 
 // Secondary trace ink for a map: the map's own peak ink rotated in hue, so the reference
 // input is distinguishable from the primary one without a second colour table.
-void secondaryTraceInk(int cmap, int light, unsigned char out[3]);
+void secondaryTraceInk(int cmap, int light, int choice, unsigned char out[3]);
 
 // is this colormap offered in the given theme? (dark = true/false)
 bool mapFitsTheme(int cmap, bool darkTheme);
